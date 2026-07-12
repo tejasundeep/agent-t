@@ -1,0 +1,39 @@
+# Python & typical IDE artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+.env
+.venv/
+
+# IDE / editor directories
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Local configuration files
+*.env
+.env.*
+.local
+
+# Build / distribution
+build/
+Dist/
+*.log
+*.tmp
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+
+# LM Studio / local LLM server artifacts (if any)
+.antigravity/
+
+# OS generated files
+.DS_Store
+Thumbs.db
