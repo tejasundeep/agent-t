@@ -10,8 +10,11 @@ def main():
             user_input = input("> ")
             if not user_input.strip():
                 continue
-            response = agent(user_input)
-            print(response)
+            # Stream the response from the agent, printing each chunk as it arrives
+            for chunk in agent.stream(user_input):
+                print(chunk, end="", flush=True)
+            # After streaming is complete, print a newline for the next prompt
+            print()
         except (KeyboardInterrupt, EOFError):
             print("\nExiting.")
             break
