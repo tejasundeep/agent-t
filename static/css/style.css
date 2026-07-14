@@ -1,0 +1,531 @@
+/* Premium Enterprise Design System with Theme Variables */
+:root {
+    --nav-height: 58px;
+}
+
+.theme-dark {
+    --bg-base: #08090c;
+    --bg-panel: #0d0f14;
+    --bg-card: rgba(20, 24, 33, 0.7);
+    --bg-card-hover: rgba(28, 33, 45, 0.95);
+    --bg-user-msg: #1a1e28;
+    --bg-assistant-msg: rgba(13, 15, 20, 0.6);
+    --border-color: rgba(255, 255, 255, 0.07);
+    --border-hover: rgba(255, 255, 255, 0.15);
+    
+    --primary: #3b82f6;
+    --primary-glow: #60a5fa;
+    --primary-bg-glow: rgba(59, 130, 246, 0.15);
+    --cyan: #06b6d4;
+    --cyan-glow: #22d3ee;
+    --teal: #10b981;
+    --teal-glow: #34d399;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #52525b;
+    --input-bg: #0b0c10;
+    
+    --console-bg: #050608;
+    --console-color: #cbd5e1;
+    --console-border: rgba(255, 255, 255, 0.04);
+    
+    --scrollbar-thumb: rgba(255, 255, 255, 0.08);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.15);
+    
+    --glass-blur: blur(12px);
+    --panel-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+    --welcome-bg: linear-gradient(135deg, rgba(20, 24, 33, 0.95), rgba(11, 15, 20, 0.95));
+}
+
+.theme-light {
+    --bg-base: #f1f5f9;
+    --bg-panel: #ffffff;
+    --bg-card: rgba(248, 250, 252, 0.8);
+    --bg-card-hover: rgba(241, 245, 249, 0.95);
+    --bg-user-msg: #e2e8f0;
+    --bg-assistant-msg: rgba(248, 250, 252, 0.6);
+    --border-color: rgba(15, 23, 42, 0.08);
+    --border-hover: rgba(15, 23, 42, 0.15);
+    
+    --primary: #1d4ed8;
+    --primary-glow: #2563eb;
+    --primary-bg-glow: rgba(37, 99, 235, 0.1);
+    --cyan: #0369a1;
+    --cyan-glow: #0891b2;
+    --teal: #047857;
+    --teal-glow: #059669;
+    --warning: #d97706;
+    --danger: #dc2626;
+    
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --input-bg: #f8fafc;
+    
+    --console-bg: #f8fafc;
+    --console-color: #1e293b;
+    --console-border: rgba(0, 0, 0, 0.06);
+    
+    --scrollbar-thumb: rgba(0, 0, 0, 0.1);
+    --scrollbar-thumb-hover: rgba(0, 0, 0, 0.2);
+    
+    --glass-blur: blur(12px);
+    --panel-shadow: 0 4px 30px rgba(15, 23, 42, 0.05);
+    --welcome-bg: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(6, 182, 212, 0.08));
+}
+
+/* Global Reset & Base Styles */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: 'Inter', sans-serif;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Scrollbars styling */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+
+/* Typography Utilities */
+.logo-text {
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.95rem;
+    letter-spacing: 0.08em;
+}
+.font-mono {
+    font-family: 'Fira Code', monospace !important;
+}
+.uppercase-tracking {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.fs-7 { font-size: 0.9rem !important; }
+.fs-8 { font-size: 0.8rem !important; }
+.fs-9 { font-size: 0.72rem !important; }
+
+/* Top Navbar styling */
+.app-navbar {
+    height: var(--nav-height);
+    background-color: var(--bg-panel);
+    border-color: var(--border-color) !important;
+    flex-shrink: 0;
+    z-index: 10;
+    transition: background-color 0.25s ease;
+}
+
+.logo-circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    box-shadow: 0 0 12px var(--primary-bg-glow);
+    background: linear-gradient(135deg, var(--primary), var(--cyan));
+}
+
+.divider-v {
+    width: 1px;
+    height: 18px;
+    background-color: var(--border-color);
+}
+
+.status-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+.status-dot.online {
+    background-color: var(--teal);
+    box-shadow: 0 0 8px var(--teal-glow);
+}
+.status-dot.offline {
+    background-color: var(--danger);
+    box-shadow: 0 0 8px var(--danger);
+}
+
+.btn-theme-toggle {
+    background-color: var(--border-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    width: 32px;
+    height: 32px;
+    transition: all 0.2s ease;
+}
+.btn-theme-toggle:hover {
+    background-color: var(--border-hover);
+    transform: scale(1.05);
+}
+
+.btn-nav-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color);
+    background-color: transparent;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+}
+.btn-nav-icon:hover {
+    color: var(--primary-glow);
+    background-color: var(--primary-bg-glow);
+    border-color: var(--primary-glow);
+    box-shadow: 0 0 10px var(--primary-bg-glow);
+    transform: scale(1.08);
+}
+.btn-nav-icon.danger-hover:hover {
+    color: #ffffff;
+    background-color: var(--danger);
+    border-color: var(--danger);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+}
+
+/* Workspace Panels System */
+.app-workspace-container {
+    height: calc(100vh - var(--nav-height));
+    width: 100vw;
+    overflow: hidden;
+}
+
+/* Middle Panel - Active Agent Chat Feed */
+.chat-feed-viewport {
+    scroll-behavior: smooth;
+}
+
+/* Welcome Enterprise Banner */
+.welcome-banner {
+    background: var(--welcome-bg) !important;
+    border-color: var(--border-color) !important;
+}
+.welcome-title {
+    color: var(--text-primary) !important;
+}
+.welcome-banner h4 {
+    font-family: 'Outfit', sans-serif;
+}
+.bg-secondary-glow {
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+}
+
+/* Message Bubbles */
+.user-msg-row {
+    display: flex;
+    justify-content: flex-end;
+}
+.user-msg-box {
+    background-color: var(--bg-user-msg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px 12px 2px 12px;
+    padding: 12px 16px;
+    color: var(--text-primary);
+    font-size: 0.88rem;
+    line-height: 1.6;
+    max-width: 80%;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.assistant-response-text {
+    line-height: 1.7;
+    font-size: 0.88rem;
+    color: var(--text-primary);
+    background-color: var(--bg-assistant-msg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px 12px 12px 2px;
+    padding: 18px 22px;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+.assistant-response-text p:last-child {
+    margin-bottom: 0;
+}
+.assistant-response-text pre {
+    background-color: var(--console-bg);
+    border: 1px solid var(--console-border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    overflow-x: auto;
+}
+.assistant-response-text code {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.78rem;
+    color: var(--cyan-glow);
+}
+
+/* Floating input panel */
+.chat-input-panel {
+    background-color: var(--bg-panel);
+    border-color: var(--border-color) !important;
+    flex-shrink: 0;
+    transition: background-color 0.25s ease;
+}
+.prompt-input-container {
+    background-color: var(--input-bg);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+}
+.prompt-input-container:focus-within {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 12px var(--primary-bg-glow);
+}
+#prompt-input {
+    color: var(--text-primary) !important;
+}
+#prompt-input::placeholder {
+    color: var(--text-muted);
+}
+.btn-run {
+    background: linear-gradient(135deg, var(--primary), var(--cyan)) !important;
+    border: none;
+    color: #ffffff !important;
+    transition: all 0.2s ease;
+}
+.btn-run:hover:not(:disabled) {
+    transform: scale(1.06);
+    box-shadow: 0 0 10px var(--primary-bg-glow);
+}
+.btn-run:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Inline trajectory stream elements */
+.trajectory-log {
+    font-family: 'Fira Code', monospace;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.thought-log-item {
+    font-family: 'Inter', sans-serif;
+    color: var(--text-secondary);
+}
+
+/* Tool executing card inline */
+.running-tool-card {
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--cyan);
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Scheduler Dashboard cards within modal */
+.scheduler-dashboard {
+    background-color: var(--bg-base);
+}
+.routine-dashboard-card {
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    transition: all 0.2s ease;
+}
+.routine-dashboard-card:hover {
+    border-color: var(--border-hover);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.routine-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+.routine-card-title {
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+}
+.routine-badge-status {
+    font-size: 0.62rem;
+    padding: 2px 6px;
+    border-radius: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+.routine-badge-status.active {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: var(--teal-glow);
+}
+.routine-badge-status.paused {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: var(--warning);
+}
+
+.routine-meta-item {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.routine-meta-item i {
+    width: 14px;
+    color: var(--text-muted);
+}
+.routine-code-block {
+    background-color: var(--console-bg);
+    border: 1px solid var(--console-border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.7rem;
+    color: var(--cyan-glow);
+    margin: 8px 0;
+    word-break: break-all;
+}
+
+.routine-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid var(--border-color);
+    margin-top: 10px;
+    padding-top: 10px;
+}
+
+.btn-routine-action {
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background-color: rgba(0,0,0,0.1);
+    color: var(--text-primary);
+    transition: all 0.15s ease;
+}
+.btn-routine-action:hover:not(:disabled) {
+    background-color: var(--border-hover);
+}
+.btn-routine-action.danger:hover:not(:disabled) {
+    background-color: var(--danger);
+    border-color: var(--danger);
+    color: #ffffff;
+}
+
+/* Modal styling overrides */
+.modal-content {
+    background-color: var(--bg-panel) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary);
+    box-shadow: var(--panel-shadow);
+}
+.modal-header, .modal-footer {
+    border-color: var(--border-color) !important;
+}
+
+/* Scheduler Routine Execution Logs modal styles */
+.routine-log-row-item {
+    border-bottom: 1px solid var(--border-color);
+    padding: 12px 16px;
+}
+.routine-log-row-item:last-child {
+    border-bottom: none;
+}
+.routine-log-badge-status {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+.routine-log-badge-status.success { background-color: rgba(16,185,129,0.15); color: var(--teal-glow); }
+.routine-log-badge-status.failure { background-color: rgba(239,68,68,0.15); color: var(--danger); }
+.routine-log-badge-status.running { background-color: rgba(59,130,246,0.15); color: var(--primary-glow); }
+.routine-log-badge-status.timeout { background-color: rgba(245,158,11,0.15); color: var(--warning); }
+
+/* Animation classes */
+.animate-spin {
+    animation: spin 1.5s linear infinite;
+}
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.animate-pulse {
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.25s ease-out forwards;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Modal theme styling overrides */
+.modal-content {
+    background-color: var(--bg-panel) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+    box-shadow: var(--panel-shadow) !important;
+}
+.modal-header, .modal-footer {
+    border-color: var(--border-color) !important;
+    background-color: var(--bg-panel) !important;
+    color: var(--text-primary) !important;
+}
+.modal-body {
+    background-color: var(--bg-panel) !important;
+    color: var(--text-primary) !important;
+}
+.modal .form-control,
+.modal .form-select {
+    background-color: var(--input-bg) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-color) !important;
+}
+.modal .form-control:focus,
+.modal .form-select:focus {
+    background-color: var(--input-bg) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--primary-glow) !important;
+    box-shadow: 0 0 8px var(--primary-bg-glow) !important;
+}
+.modal .form-control::placeholder {
+    color: var(--text-muted) !important;
+}
+
+/* Close button dark/light theme adjustments */
+.theme-dark .btn-close {
+    filter: invert(1) grayscale(1) brightness(2);
+}
+.theme-light .btn-close {
+    filter: none;
+}

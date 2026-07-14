@@ -37,3 +37,11 @@ Dist/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Database / SQLite WAL files / Context Memory JSON
+routines.db
+routines.db-shm
+routines.db-wal
+context_memory.json
+
+

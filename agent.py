@@ -1,16 +1,23 @@
 import json
 from llm import chat,stream
 from registry import registry
+from context_engine import ContextEngine
+
 class Agent:
     def __init__(self,system=None):
         self.messages=[{"role":"system","content":system}] if system else []
+        self.context_engine = ContextEngine()
+
     def __call__(self,prompt):
         """Legacy call returning full response string (kept for compatibility)."""
         self.messages.append({"role":"user","content":prompt})
         while True:
-            text,calls=stream(chat(self.messages,registry.schema))
+            optimized_messages = self.context_engine.assemble_context(self.messages)
+            text,calls=stream(chat(optimized_messages,registry.schema))
             if not calls:
-                self.messages.append({"role":"assistant","content":text});return text
+                self.messages.append({"role":"assistant","content":text})
+                self.context_engine.buffer_interaction(prompt, text)
+                return text
             self.messages.append({"role":"assistant","tool_calls":[{"id":c["id"],"type":"function","function":{"name":c["name"],"arguments":c["args"]}} for c in calls]})
             for c in calls:
                 try:
@@ -18,6 +25,7 @@ class Agent:
                 except Exception as e:
                     r=f"Tool Error: {e}"
                 self.messages.append({"role":"tool","tool_call_id":c["id"],"content":str(r)})
+
     def stream(self, prompt):
         """Yield assistant response characters as they arrive.
         The LLM client may return the full response in a single delta. To simulate
@@ -29,7 +37,8 @@ class Agent:
         while True:
             full_text = ""
             tool_calls = []
-            full_text, tool_calls = stream(chat(self.messages, registry.schema))
+            optimized_messages = self.context_engine.assemble_context(self.messages)
+            full_text, tool_calls = stream(chat(optimized_messages, registry.schema))
             # Stream the assistant's response character by character for a live typing effect
             for char in full_text:
                 yield char
@@ -46,4 +55,6 @@ class Agent:
                         r = f"Tool Error: {e}"
                     self.messages.append({"role": "tool", "tool_call_id": c["id"], "content": str(r)})
             else:
+                self.context_engine.buffer_interaction(prompt, full_text)
                 break
+
