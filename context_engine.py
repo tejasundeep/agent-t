@@ -54,8 +54,13 @@ class ContextEngine:
         if os.path.exists(MEMORY_FILE):
             try:
                 with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    self.nodes = data.get("nodes", [])
+                    raw = f.read().strip()
+                if not raw:
+                    # File exists but is empty (e.g. interrupted write during hot-reload)
+                    self.nodes = []
+                    return
+                data = json.loads(raw)
+                self.nodes = data.get("nodes", [])
             except Exception as e:
                 print(f"[Context Engine Error] Failed to load context memory: {e}")
                 self.nodes = []

@@ -1,6 +1,4 @@
 import time
-import eventlet
-eventlet.monkey_patch()
 
 import os
 import json
@@ -25,7 +23,7 @@ except ImportError:
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret-key-agent-t'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Ensure a workspace directory exists in the project
 WORKSPACE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'workspace')
@@ -333,4 +331,4 @@ def api_routine_logs(name):
         return {"status": "error", "message": str(e)}, 500
 
 if __name__ == '__main__':
-    socketio.run(app, host='127.0.0.1', port=5000, debug=True)
+    socketio.run(app, host='127.0.0.1', port=5000, debug=True, use_reloader=True, log_output=True, allow_unsafe_werkzeug=True)
