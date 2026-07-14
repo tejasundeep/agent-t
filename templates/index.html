@@ -1,210 +1,293 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Antigravity Enterprise Console</title>
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent T — Neural AI Console</title>
+  <meta name="description" content="Agent T: A premium autonomous AI console with real-time tool orchestration, background scheduling, and neural inference streaming.">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+  <!-- Bootstrap CSS (for modal utilities only) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Our Design System -->
+  <link rel="stylesheet" href="/static/css/style.css">
 </head>
-<body class="theme-dark h-100 overflow-hidden">
+<body class="theme-dark">
 
-    <!-- Navbar Header -->
-    <nav class="app-navbar px-4 d-flex align-items-center justify-content-between border-bottom">
-        <div class="d-flex align-items-center">
-            <div class="logo-circle bg-primary-glow text-black d-flex align-items-center justify-content-center fw-bold" style="width: 32px; height: 32px; font-size: 0.85rem;" title="Antigravity Console">
-                AG
+  <!-- Animated background mesh -->
+  <div class="bg-mesh" aria-hidden="true">
+    <div class="bg-mesh-orb orb-1"></div>
+    <div class="bg-mesh-orb orb-2"></div>
+    <div class="bg-mesh-orb orb-3"></div>
+  </div>
+
+  <!-- ============================================================
+       APP SHELL
+       ============================================================ -->
+  <div class="app-shell">
+
+    <!-- ── LEFT SIDEBAR ── -->
+    <aside class="app-sidebar" id="app-sidebar">
+
+      <!-- Logo -->
+      <div class="sidebar-logo" title="Agent T">AT</div>
+
+      <div class="sidebar-divider"></div>
+
+      <!-- Main nav -->
+      <nav class="sidebar-nav">
+        <button class="sidebar-btn active" id="btn-chat" data-tip="Chat" title="Chat">
+          <i class="bi bi-chat-square-text"></i>
+        </button>
+        <button class="sidebar-btn" id="btn-open-scheduler" data-tip="Scheduler" title="Background Scheduler">
+          <i class="bi bi-clock-history"></i>
+        </button>
+      </nav>
+
+      <!-- Bottom controls -->
+      <div class="sidebar-bottom">
+        <!-- Connection orb -->
+        <div class="sidebar-btn" id="connection-indicator" data-tip="Connected" title="Connection Status" style="cursor:default;">
+          <div class="status-orb online" id="status-orb"></div>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <!-- Reset -->
+        <button class="sidebar-btn danger-hover" id="btn-reset" data-tip="Reset Workspace" title="Reset Workspace">
+          <i class="bi bi-arrow-counterclockwise"></i>
+        </button>
+
+        <!-- Theme toggle -->
+        <button class="sidebar-btn" id="theme-toggle" data-tip="Toggle Theme" title="Toggle Theme">
+          <i class="bi bi-sun-fill" id="theme-icon"></i>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ── MAIN CONTENT ── -->
+    <main class="app-main">
+
+      <!-- Topbar — minimal on desktop, full navbar on mobile -->
+      <header class="app-topbar">
+        <!-- Logo (mobile only) -->
+        <div class="topbar-logo" aria-label="Agent T">AT</div>
+
+        <div class="topbar-title">
+          Agent T
+          <span class="title-badge">Neural Console</span>
+        </div>
+        <div class="topbar-spacer"></div>
+
+        <!-- Status (always visible) -->
+        <div class="topbar-status" id="topbar-agent-status">
+          <div class="status-orb online" id="topbar-orb" style="width:6px;height:6px;"></div>
+          <span id="topbar-status-text">Ready</span>
+        </div>
+
+        <!-- Mobile-only action buttons -->
+        <div class="topbar-mobile-actions">
+          <div class="topbar-divider"></div>
+
+          <button class="topbar-action-btn" id="mob-btn-scheduler" title="Scheduler">
+            <i class="bi bi-clock-history"></i>
+          </button>
+
+          <button class="topbar-action-btn danger-hover" id="mob-btn-reset" title="Reset Workspace">
+            <i class="bi bi-arrow-counterclockwise"></i>
+          </button>
+
+          <button class="topbar-action-btn" id="mob-theme-toggle" title="Toggle Theme">
+            <i class="bi bi-sun-fill" id="mob-theme-icon"></i>
+          </button>
+
+          <!-- Mobile connection indicator -->
+          <div class="topbar-action-btn" id="mob-connection-indicator" style="cursor:default;" title="Connection Status">
+            <div class="status-orb online" id="mob-status-orb"></div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Chat feed viewport -->
+      <div class="chat-viewport" id="chat-viewport">
+        <div class="chat-column" id="chat-feed">
+
+          <!-- Welcome Hero -->
+          <div class="welcome-hero" id="welcome-hero">
+            <div class="welcome-eyebrow">
+              <span class="welcome-eyebrow-dot"></span>
+              Autonomous AI Console
             </div>
-        </div>
-        <div class="d-flex align-items-center gap-2">
-            <!-- Connection Indicator -->
-            <span class="connection-status d-flex align-items-center me-2" title="Connection Status">
-                <span class="status-dot online animate-pulse"></span>
-            </span>
-            <div class="divider-v me-1"></div>
-            <!-- Scheduler Modal Trigger -->
-            <button class="btn btn-nav-icon" id="btn-open-scheduler" title="Background Scheduler">
-                <i class="bi bi-clock-history"></i>
-            </button>
-            <!-- Reset Workspace -->
-            <button class="btn btn-nav-icon danger-hover" id="btn-reset" title="Reset Workspace">
-                <i class="bi bi-arrow-counterclockwise"></i>
-            </button>
-            <div class="divider-v mx-1"></div>
-            <!-- Theme Toggle Button -->
-            <button class="btn btn-theme-toggle p-2 rounded-circle d-flex align-items-center justify-content-center" id="theme-toggle" title="Toggle Theme">
-                <i class="bi bi-sun-fill text-warning fs-8" id="theme-icon"></i>
-            </button>
-        </div>
-    </nav>
-
-    <!-- Main Single Panel Viewport -->
-    <main class="app-workspace-container d-flex flex-column flex-grow-1">
-        <!-- Chat Feed Scroll View -->
-        <div class="chat-feed-viewport flex-grow-1 overflow-auto p-4" id="chat-feed-container">
-            <div class="row justify-content-center">
-                <div class="col-xl-7 col-lg-9 col-md-11" id="chat-feed">
-                    <!-- Welcome Enterprise Gradient Banner -->
-                    <div class="welcome-banner p-4 rounded-4 mb-4 shadow-sm border">
-                        <div class="row align-items-center">
-                            <div class="col-sm-8">
-                                <h4 class="fw-bold tracking-tight welcome-title mb-2">Welcome to your Agent Workspace</h4>
-                                <p class="fs-7 text-secondary mb-3">Antigravity orchestrates fully autonomous tasks, monitors background crons, and manages workspace scripts. Ask a question or submit a technical execution objective.</p>
-                                <div class="d-flex align-items-center gap-2">
-                                    <span class="badge bg-secondary-glow text-secondary fs-9 rounded-pill">AST Inference</span>
-                                    <span class="badge bg-secondary-glow text-secondary fs-9 rounded-pill">SQLite Scheduler</span>
-                                    <span class="badge bg-secondary-glow text-secondary fs-9 rounded-pill">BM25 Search</span>
-                                </div>
-                            </div>
-                            <div class="col-sm-4 text-center d-none d-sm-block">
-                                <div class="welcome-graphic">
-                                    <i class="bi bi-infinity text-primary-glow animate-pulse display-4"></i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Log status marker -->
-                    <div class="trajectory-log text-secondary fs-8 mb-4">
-                        [System Initialized]: Workspace active. Ready for next prompt.
-                    </div>
-                </div>
+            <h1 class="welcome-heading">
+              Your Neural<br>
+              <span class="gradient-text">Command Center</span>
+            </h1>
+            <p class="welcome-sub">
+              Agent T orchestrates fully autonomous multi-step tasks, streams real-time tool execution, 
+              and manages background cron routines — all in one premium interface.
+            </p>
+            <div class="welcome-pills">
+              <span class="welcome-pill"><i class="bi bi-cpu"></i> AST Inference</span>
+              <span class="welcome-pill"><i class="bi bi-clock-history"></i> SQLite Scheduler</span>
+              <span class="welcome-pill"><i class="bi bi-search"></i> BM25 Search</span>
+              <span class="welcome-pill"><i class="bi bi-lightning-charge"></i> Live Streaming</span>
             </div>
+          </div>
+
+          <!-- Initial system log -->
+          <div class="traj-log fade-in" id="init-log">
+            <span class="traj-prompt">❯</span>
+            <span class="traj-text">[System Initialized]: Workspace active. Awaiting directive.</span>
+          </div>
+
         </div>
+      </div>
 
-        <!-- Floating prompt footer -->
-        <div class="chat-input-panel border-top p-3 bg-card-blur">
-            <div class="row justify-content-center">
-                <div class="col-xl-7 col-lg-9 col-md-11">
-                    <form id="prompt-form">
-                        <div class="prompt-input-container d-flex align-items-center rounded-4 px-3 py-2">
-                            <!-- Input field -->
-                            <input type="text" id="prompt-input" class="form-control border-0 bg-transparent shadow-none fs-7 p-0 me-2" placeholder="Ask a question or request a workspace optimization..." autocomplete="off">
-                            
-                            <div class="d-flex align-items-center gap-2">
-                                <!-- Circle Spinner -->
-                                <div class="spinner-circle-status text-secondary animate-spin d-none" id="status-spinner">
-                                    <i class="bi bi-arrow-repeat fs-6 text-primary-glow"></i>
-                                </div>
+      <!-- Command bar -->
+      <div class="command-bar-wrap">
+        <div class="command-bar">
+          <form id="prompt-form">
+            <div class="command-bar-inner" id="command-bar-inner">
+              <!-- Spinner dots while running -->
+              <div id="command-spinner" class="command-spinner" style="display:none;">
+                <div class="spin-dot"></div>
+                <div class="spin-dot"></div>
+                <div class="spin-dot"></div>
+              </div>
 
-                                <!-- Run submit -->
-                                <button type="submit" class="btn btn-run rounded-circle p-1 d-flex align-items-center justify-content-center shadow" style="width: 32px; height: 32px;" id="btn-submit">
-                                    <i class="bi bi-arrow-up-short fs-4 fw-bold"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </form>
-                </div>
+              <input
+                type="text"
+                id="prompt-input"
+                class="command-input"
+                placeholder="Ask a question or request a workspace operation..."
+                autocomplete="off"
+                spellcheck="false"
+              >
+
+              <button type="submit" class="btn-send" id="btn-submit" title="Send">
+                <i class="bi bi-arrow-up" id="btn-send-icon"></i>
+              </button>
             </div>
+          </form>
         </div>
+      </div>
+
     </main>
+  </div>
 
-    <!-- Modal: Background Scheduler Dashboard -->
-    <div class="modal fade" id="routinesDashboardModal" tabindex="-1" aria-labelledby="routinesDashboardModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-xl">
-            <div class="modal-content border">
-                <div class="modal-header border-bottom">
-                    <h6 class="modal-title fw-bold" id="routinesDashboardModalLabel">
-                        <i class="bi bi-clock-history me-2 text-primary"></i> Background Scheduler Dashboard
-                    </h6>
-                    <div class="d-flex gap-2 ms-auto">
-                        <button class="btn btn-primary btn-sm fs-9 py-1 px-3 rounded-pill" id="btn-add-routine-modal">
-                            <i class="bi bi-plus-circle me-1"></i> Add Routine
-                        </button>
-                    </div>
-                    <button type="button" class="btn-close ms-2" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body p-3 bg-base-panel">
-                    <!-- Routines List Table -->
-                    <div class="scheduler-dashboard overflow-auto" style="max-height: 550px;" id="scheduler-routines-container">
-                        <div class="text-center text-muted py-4 fs-8">
-                            <div class="spinner-border spinner-border-sm text-secondary me-2" role="status"></div>
-                            Fetching routines database...
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+  <!-- ============================================================
+       SLIDE-OVER SCHEDULER PANEL
+       ============================================================ -->
+  <div class="scheduler-overlay" id="scheduler-overlay"></div>
+
+  <aside class="scheduler-panel" id="scheduler-panel" aria-label="Background Scheduler">
+    <div class="scheduler-panel-header">
+      <div style="width:28px;height:28px;border-radius:8px;background:var(--indigo-dim);border:1px solid var(--border-active);display:flex;align-items:center;justify-content:center;color:var(--indigo-light);font-size:13px;">
+        <i class="bi bi-clock-history"></i>
+      </div>
+      <div class="scheduler-panel-title">Background Scheduler</div>
+      <button class="btn-add-routine" id="btn-add-routine-trigger">
+        <i class="bi bi-plus"></i> New Routine
+      </button>
+      <button class="scheduler-panel-close" id="btn-close-scheduler">
+        <i class="bi bi-x"></i>
+      </button>
     </div>
-
-    <!-- Modal: Add New Background Routine -->
-    <div class="modal fade" id="addRoutineModal" tabindex="-1" aria-labelledby="addRoutineModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content border">
-                <div class="modal-header border-bottom">
-                    <h6 class="modal-title fw-bold" id="addRoutineModalLabel"><i class="bi bi-plus-circle me-2 text-primary"></i> Create Background Routine</h6>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <form id="create-routine-form">
-                    <div class="modal-body">
-                        <div class="mb-3">
-                            <label for="routine-name" class="form-label fs-8 text-secondary">Unique Name</label>
-                            <input type="text" class="form-control form-control-sm" id="routine-name" placeholder="e.g. system-health-check" required>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="routine-schedule" class="form-label fs-8 text-secondary">Schedule (Cron / Interval)</label>
-                                <input type="text" class="form-control form-control-sm" id="routine-schedule" placeholder="e.g. */5 * * * * or 10s, 1m" required>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="routine-type" class="form-label fs-8 text-secondary">Action Type</label>
-                                <select class="form-select form-select-sm" id="routine-type" required>
-                                    <option value="shell">shell (Subprocess CLI)</option>
-                                    <option value="prompt">prompt (Agent Execution)</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="routine-action" class="form-label fs-8 text-secondary">Action Script / Instruction</label>
-                            <textarea class="form-control form-control-sm font-mono" id="routine-action" rows="3" placeholder="e.g. python health_check.py" required></textarea>
-                        </div>
-                        <div class="mb-3">
-                            <label for="routine-timeout" class="form-label fs-8 text-secondary">Timeout Limit (seconds)</label>
-                            <input type="number" class="form-control form-control-sm" id="routine-timeout" value="300" min="10" required>
-                        </div>
-                        <div class="alert alert-danger fs-9 py-2 d-none" id="routine-error-alert"></div>
-                    </div>
-                    <div class="modal-footer border-top py-2">
-                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary btn-sm">Schedule Task</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+    <div class="scheduler-panel-body" id="scheduler-panel-body">
+      <div class="text-center py-5" style="color:var(--text-muted);font-size:0.8rem;">
+        <div class="spinner-border spinner-border-sm text-secondary me-2" role="status"></div>
+        Loading routines...
+      </div>
     </div>
+  </aside>
 
-    <!-- Modal: View Background Routine Logs -->
-    <div class="modal fade" id="routineLogsModal" tabindex="-1" aria-labelledby="routineLogsModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content border">
-                <div class="modal-header border-bottom">
-                    <h6 class="modal-title fw-bold" id="routineLogsModalLabel"><i class="bi bi-clock-history me-2 text-info"></i> Execution Logs: <span id="log-modal-routine-name"></span></h6>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body p-0">
-                    <div class="logs-list-scroll overflow-auto" style="max-height: 450px;" id="routine-logs-output-container">
-                        <!-- Filled dynamically -->
-                    </div>
-                </div>
-                <div class="modal-footer border-top py-2">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
-                </div>
-            </div>
+  <!-- ============================================================
+       MODAL: Add New Routine
+       ============================================================ -->
+  <div class="modal fade" id="addRoutineModal" tabindex="-1" aria-labelledby="addRoutineModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="addRoutineModalLabel">
+            <i class="bi bi-plus-circle me-2" style="color:var(--indigo-light)"></i>Create Background Routine
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
+        <form id="create-routine-form">
+          <div class="modal-body">
+            <div class="mb-4">
+              <label for="routine-name" class="form-label">Unique Name</label>
+              <input type="text" class="form-control" id="routine-name" placeholder="e.g. system-health-check" required>
+            </div>
+            <div class="row g-3 mb-4">
+              <div class="col-md-6">
+                <label for="routine-schedule" class="form-label">Schedule</label>
+                <input type="text" class="form-control" id="routine-schedule" placeholder="e.g. */5 * * * * or 10s" required>
+              </div>
+              <div class="col-md-6">
+                <label for="routine-type" class="form-label">Action Type</label>
+                <select class="form-select" id="routine-type" required>
+                  <option value="shell">shell — Subprocess CLI</option>
+                  <option value="prompt">prompt — Agent Execution</option>
+                </select>
+              </div>
+            </div>
+            <div class="mb-4">
+              <label for="routine-action" class="form-label">Action / Script</label>
+              <textarea class="form-control" id="routine-action" rows="3" placeholder="e.g. python health_check.py" required></textarea>
+            </div>
+            <div class="mb-3">
+              <label for="routine-timeout" class="form-label">Timeout (seconds)</label>
+              <input type="number" class="form-control" id="routine-timeout" value="300" min="10" required>
+            </div>
+            <div class="alert alert-danger fs-9 py-2 d-none" id="routine-error-alert" style="border-radius:8px;"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check2 me-1"></i>Schedule Routine
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
+  </div>
 
-    <!-- Socket.IO CDN -->
-    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
-    <!-- Marked.js for Markdown parsing -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- Bootstrap JS Bundle -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Main JS Application script -->
-    <script src="/static/js/chat.js"></script>
+  <!-- ============================================================
+       MODAL: Routine Execution Logs
+       ============================================================ -->
+  <div class="modal fade" id="routineLogsModal" tabindex="-1" aria-labelledby="routineLogsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="routineLogsModalLabel">
+            <i class="bi bi-list-task me-2" style="color:var(--cyan)"></i>
+            Execution Logs — <span id="log-modal-routine-name" style="color:var(--text-secondary);font-weight:400;"></span>
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" style="padding:0 !important;">
+          <div id="routine-logs-output-container" style="max-height:460px;overflow-y:auto;"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/static/js/chat.js"></script>
 </body>
 </html>

@@ -1,483 +1,755 @@
+/* ============================================================
+   AGENT-K — Neural Console JavaScript
+   Full UI Logic for the Neural Dark redesign
+   ============================================================ */
+
 document.addEventListener('DOMContentLoaded', () => {
-    const socket = io();
 
-    // DOM Elements - Theme & Connection
-    const body = document.body;
-    const themeToggle = document.getElementById('theme-toggle');
-    const themeIcon = document.getElementById('theme-icon');
-    const btnReset = document.getElementById('btn-reset');
-    const connectionStatus = document.querySelector('.connection-status');
+  /* ──────────────────────────────────────────
+     SOCKET.IO
+  ────────────────────────────────────────── */
+  const socket = io();
 
-    // DOM Elements - Chat Feed (Center Panel)
-    const chatFeed = document.getElementById('chat-feed');
-    const chatFeedContainer = document.getElementById('chat-feed-container');
-    const promptForm = document.getElementById('prompt-form');
-    const promptInput = document.getElementById('prompt-input');
-    const btnSubmit = document.getElementById('btn-submit');
-    const statusSpinner = document.getElementById('status-spinner');
-    
-    // DOM Elements - Scheduler (Modal-based Dashboard)
-    const btnOpenScheduler = document.getElementById('btn-open-scheduler');
-    const schedulerContainer = document.getElementById('scheduler-routines-container');
-    const btnAddRoutineModal = document.getElementById('btn-add-routine-modal');
-    const createRoutineForm = document.getElementById('create-routine-form');
-    const routineErrorAlert = document.getElementById('routine-error-alert');
-    
-    // DOM Elements - Scheduler Logs Modal
-    const routineLogsModalName = document.getElementById('log-modal-routine-name');
-    const routineLogsOutputContainer = document.getElementById('routine-logs-output-container');
+  /* ──────────────────────────────────────────
+     DOM REFS
+  ────────────────────────────────────────── */
+  const body                    = document.body;
+  const themeToggle             = document.getElementById('theme-toggle');
+  const themeIcon               = document.getElementById('theme-icon');
+  const btnReset                = document.getElementById('btn-reset');
 
-    // Modals Initialization
-    const routinesDashboardModal = new bootstrap.Modal(document.getElementById('routinesDashboardModal'));
-    const addRoutineModal = new bootstrap.Modal(document.getElementById('addRoutineModal'));
-    const routineLogsModal = new bootstrap.Modal(document.getElementById('routineLogsModal'));
+  // Chat
+  const chatFeed                = document.getElementById('chat-feed');
+  const chatViewport            = document.getElementById('chat-viewport');
+  const promptForm              = document.getElementById('prompt-form');
+  const promptInput             = document.getElementById('prompt-input');
+  const btnSubmit               = document.getElementById('btn-submit');
+  const btnSendIcon             = document.getElementById('btn-send-icon');
+  const commandSpinner          = document.getElementById('command-spinner');
 
-    // State Variables
-    let currentResponseBlock = null;
-    let currentResponseText = '';
+  // Status
+  const statusOrb               = document.getElementById('status-orb');
+  const topbarOrb               = document.getElementById('topbar-orb');
+  const topbarStatusText        = document.getElementById('topbar-status-text');
+  const connectionIndicator     = document.getElementById('connection-indicator');
 
-    // Initialize Tooltips
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[title]'));
-    tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
+  // Mobile topbar buttons (mirrors of sidebar)
+  const mobBtnScheduler         = document.getElementById('mob-btn-scheduler');
+  const mobBtnReset             = document.getElementById('mob-btn-reset');
+  const mobThemeToggle          = document.getElementById('mob-theme-toggle');
+  const mobThemeIcon            = document.getElementById('mob-theme-icon');
+  const mobStatusOrb            = document.getElementById('mob-status-orb');
+
+  // Scheduler panel (slide-over)
+  const btnOpenScheduler        = document.getElementById('btn-open-scheduler');
+  const schedulerOverlay        = document.getElementById('scheduler-overlay');
+  const schedulerPanel          = document.getElementById('scheduler-panel');
+  const btnCloseScheduler       = document.getElementById('btn-close-scheduler');
+  const schedulerPanelBody      = document.getElementById('scheduler-panel-body');
+  const btnAddRoutineTrigger    = document.getElementById('btn-add-routine-trigger');
+
+  // Create-routine modal
+  const createRoutineForm       = document.getElementById('create-routine-form');
+  const routineErrorAlert       = document.getElementById('routine-error-alert');
+
+  // Logs modal
+  const logModalRoutineName     = document.getElementById('log-modal-routine-name');
+  const routineLogsContainer    = document.getElementById('routine-logs-output-container');
+
+  /* ──────────────────────────────────────────
+     BOOTSTRAP MODALS
+  ────────────────────────────────────────── */
+  const addRoutineModal    = new bootstrap.Modal(document.getElementById('addRoutineModal'));
+  const routineLogsModal   = new bootstrap.Modal(document.getElementById('routineLogsModal'));
+
+  /* ──────────────────────────────────────────
+     STATE
+  ────────────────────────────────────────── */
+  let currentResponseBlock = null;
+  let currentResponseText  = '';
+  let isAgentRunning       = false;
+  let schedulerOpen        = false;
+  let finishTimeout        = null;  // failsafe: reset UI if agent_status never arrives
+
+  /* ──────────────────────────────────────────
+     THEME MANAGEMENT
+  ────────────────────────────────────────── */
+  function setTheme(theme) {
+    if (theme === 'light') {
+      body.classList.remove('theme-dark');
+      body.classList.add('theme-light');
+      themeIcon.className = 'bi bi-moon-fill';
+      if (mobThemeIcon) mobThemeIcon.className = 'bi bi-moon-fill';
+      localStorage.setItem('theme', 'light');
+    } else {
+      body.classList.remove('theme-light');
+      body.classList.add('theme-dark');
+      themeIcon.className = 'bi bi-sun-fill';
+      if (mobThemeIcon) mobThemeIcon.className = 'bi bi-sun-fill';
+      localStorage.setItem('theme', 'dark');
+    }
+  }
+
+  setTheme(localStorage.getItem('theme') || 'dark');
+
+  themeToggle.addEventListener('click', () => {
+    setTheme(body.classList.contains('theme-dark') ? 'light' : 'dark');
+  });
+
+  // Mobile theme toggle mirrors desktop
+  if (mobThemeToggle) {
+    mobThemeToggle.addEventListener('click', () => {
+      setTheme(body.classList.contains('theme-dark') ? 'light' : 'dark');
     });
+  }
 
-    // ---------------------------------------------
-    // Theme Management
-    // ---------------------------------------------
-    function setTheme(theme) {
-        if (theme === 'light') {
-            body.classList.remove('theme-dark');
-            body.classList.add('theme-light');
-            themeIcon.className = 'bi bi-moon-fill text-dark fs-8';
-            localStorage.setItem('theme', 'light');
+  /* ──────────────────────────────────────────
+     CONNECTION STATUS
+  ────────────────────────────────────────── */
+  function setConnected(connected) {
+    if (connected) {
+      if (statusOrb) { statusOrb.classList.add('online'); statusOrb.classList.remove('offline'); }
+      if (mobStatusOrb) { mobStatusOrb.classList.add('online'); mobStatusOrb.classList.remove('offline'); }
+      topbarOrb.style.background  = 'var(--emerald)';
+      topbarOrb.style.boxShadow   = '0 0 8px var(--emerald-glow)';
+      if (connectionIndicator) connectionIndicator.setAttribute('data-tip', 'Connected');
+    } else {
+      if (statusOrb) { statusOrb.classList.remove('online'); statusOrb.classList.add('offline'); }
+      if (mobStatusOrb) { mobStatusOrb.classList.remove('online'); mobStatusOrb.classList.add('offline'); }
+      topbarOrb.style.background  = 'var(--rose)';
+      topbarOrb.style.boxShadow   = '0 0 8px var(--rose-glow)';
+      if (connectionIndicator) connectionIndicator.setAttribute('data-tip', 'Disconnected');
+    }
+  }
+
+  socket.on('connect',    () => setConnected(true));
+  socket.on('disconnect', () => setConnected(false));
+
+  // Wire mobile scheduler button
+  if (mobBtnScheduler) {
+    mobBtnScheduler.addEventListener('click', openScheduler);
+  }
+
+  /* ──────────────────────────────────────────
+     AGENT STATUS UI
+  ────────────────────────────────────────── */
+  function setAgentRunning(running) {
+    isAgentRunning = running;
+
+    // Always clear the failsafe timer when state changes
+    if (finishTimeout) { clearTimeout(finishTimeout); finishTimeout = null; }
+
+    if (running) {
+      btnSubmit.disabled   = true;
+      promptInput.disabled = true;
+      commandSpinner.style.display = 'flex';
+      btnSubmit.classList.add('is-running');
+      btnSendIcon.className = 'bi bi-stop-fill';
+      topbarStatusText.textContent = 'Processing...';
+      topbarOrb.style.animation = 'orbPulse 1s ease-in-out infinite';
+    } else {
+      btnSubmit.disabled   = false;
+      promptInput.disabled = false;
+      commandSpinner.style.display = 'none';
+      btnSubmit.classList.remove('is-running');
+      btnSendIcon.className = 'bi bi-arrow-up';
+      topbarStatusText.textContent = 'Ready';
+      topbarOrb.style.animation = 'none';  // 'none' fully kills inline animation
+      topbarOrb.style.removeProperty('animation');  // then remove so CSS class can take over
+      currentResponseBlock = null;
+      currentResponseText  = '';
+      removeNeuralThinking();
+      promptInput.focus();
+    }
+  }
+
+  /* ──────────────────────────────────────────
+     SCROLL TO BOTTOM
+  ────────────────────────────────────────── */
+  function scrollToBottom() {
+    chatViewport.scrollTop = chatViewport.scrollHeight;
+  }
+
+  /* ──────────────────────────────────────────
+     RESET WORKSPACE
+  ────────────────────────────────────────── */
+  function doReset() {
+    if (!confirm('Reset workspace? This will restore orchestrator.py to defaults.')) return;
+    fetch('/api/reset', { method: 'POST' })
+      .then(r => r.json())
+      .then(() => {
+        const hero = document.getElementById('welcome-hero');
+        chatFeed.innerHTML = '';
+        if (hero) chatFeed.appendChild(hero);
+        appendTrajectoryLog('[System Reset]: Workspace initialized cleanly. Ready for next directive.');
+        currentResponseBlock = null;
+        currentResponseText  = '';
+      });
+  }
+
+  btnReset.addEventListener('click', doReset);
+  if (mobBtnReset) mobBtnReset.addEventListener('click', doReset);
+
+
+  /* ──────────────────────────────────────────
+     PROMPT SUBMISSION
+  ────────────────────────────────────────── */
+  promptForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const prompt = promptInput.value.trim();
+    if (!prompt || isAgentRunning) return;
+
+    // Hide welcome hero after first message
+    const hero = document.getElementById('welcome-hero');
+    if (hero) {
+      hero.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+      hero.style.opacity    = '0';
+      hero.style.transform  = 'translateY(-8px)';
+      setTimeout(() => hero.remove(), 400);
+    }
+    const initLog = document.getElementById('init-log');
+    if (initLog) initLog.remove();
+
+    // Render user message
+    appendUserMessage(prompt);
+    promptInput.value = '';
+
+    // Close any lingering neural thinking
+    removeNeuralThinking();
+
+    setAgentRunning(true);
+    socket.emit('start_agent', { prompt });
+  });
+
+  /* ──────────────────────────────────────────
+     APPEND HELPERS
+  ────────────────────────────────────────── */
+  function appendUserMessage(text) {
+    const row = document.createElement('div');
+    row.className = 'user-msg-row';
+    row.innerHTML = `<div class="user-msg-bubble">${escapeHTML(text)}</div>`;
+    chatFeed.appendChild(row);
+    scrollToBottom();
+  }
+
+  function appendTrajectoryLog(text) {
+    const el = document.createElement('div');
+    el.className = 'traj-log fade-in';
+    el.innerHTML = `
+      <span class="traj-prompt">❯</span>
+      <span class="traj-text">${escapeHTML(text)}</span>
+    `;
+    chatFeed.appendChild(el);
+    scrollToBottom();
+  }
+
+  function showNeuralThinking() {
+    removeNeuralThinking();
+    const el = document.createElement('div');
+    el.id = 'neural-thinking';
+    el.className = 'neural-thinking';
+    el.innerHTML = `
+      <div class="neural-orb">
+        <div class="neural-orb-core"></div>
+        <div class="neural-orb-ring"></div>
+      </div>
+      <div class="neural-label">
+        <span style="color:var(--text-muted)">Neural processing</span>
+        <div class="neural-dots">
+          <div class="neural-dot"></div>
+          <div class="neural-dot"></div>
+          <div class="neural-dot"></div>
+        </div>
+      </div>
+    `;
+    chatFeed.appendChild(el);
+    scrollToBottom();
+  }
+
+  function removeNeuralThinking() {
+    const el = document.getElementById('neural-thinking');
+    if (el) el.remove();
+  }
+
+  /* ──────────────────────────────────────────
+     SOCKET EVENTS
+  ────────────────────────────────────────── */
+  socket.on('agent_status', data => {
+    if (data.status === 'finished') {
+      setAgentRunning(false);
+      if (schedulerOpen) loadSchedulerPanel();
+    }
+  });
+
+  socket.on('trajectory_log', data => {
+    removeNeuralThinking();
+    appendTrajectoryLog(data.log);
+  });
+
+  socket.on('thought_start', data => {
+    showNeuralThinking();
+    const el = document.getElementById('neural-thinking');
+    if (el) {
+      const label = el.querySelector('.neural-label span');
+      if (label) {
+        label.textContent = data.duration > 1
+          ? `Neural processing (${data.duration}s)`
+          : 'Neural processing';
+      }
+    }
+  });
+
+  socket.on('step_start', data => {
+    removeNeuralThinking();
+    renderToolStepCard(data, 'running');
+  });
+
+  socket.on('step_log', () => {
+    // suppress raw step logs – shown inline in the tool card header
+  });
+
+  socket.on('step_complete', data => {
+    updateToolStepCard(data.id, data.status === 'success' ? 'success' : 'error');
+  });
+
+  socket.on('thought_chunk', data => {
+    removeNeuralThinking();
+
+    if (!currentResponseBlock) {
+      const blockId = `resp-${Date.now()}`;
+      const row = document.createElement('div');
+      row.className = 'agent-response-row fade-in';
+      row.innerHTML = `
+        <div class="agent-avatar">AT</div>
+        <div class="agent-response-body">
+          <div class="agent-response-card" id="${blockId}"></div>
+        </div>
+      `;
+      chatFeed.appendChild(row);
+      currentResponseBlock = document.getElementById(blockId);
+      currentResponseText  = '';
+    }
+
+    currentResponseText += data.text;
+
+    if (window.marked) {
+      currentResponseBlock.innerHTML = marked.parse(currentResponseText);
+    } else {
+      currentResponseBlock.textContent = currentResponseText;
+    }
+
+    scrollToBottom();
+
+    // Failsafe: if agent_status 'finished' never arrives within 8s of the
+    // last chunk, auto-reset the UI so it doesn't stay stuck.
+    if (finishTimeout) clearTimeout(finishTimeout);
+    finishTimeout = setTimeout(() => {
+      if (isAgentRunning) {
+        console.warn('[Agent-T] agent_status timeout — resetting UI');
+        setAgentRunning(false);
+      }
+    }, 8000);
+  });
+
+  /* ──────────────────────────────────────────
+     TOOL STEP CARDS
+  ────────────────────────────────────────── */
+  function renderToolStepCard(data, status) {
+    const card = document.createElement('div');
+    card.id        = `step-card-${data.id}`;
+    card.className = `tool-step-card status-${status}`;
+
+    const iconClass = status === 'running' ? 'bi-gear-fill icon-spin' : 'bi-check-circle-fill';
+    const badgeLabel = status === 'running' ? 'Running' : 'Done';
+
+    card.innerHTML = `
+      <div class="tool-step-header">
+        <div class="tool-step-icon" id="step-icon-${data.id}">
+          <i class="bi ${iconClass}" id="step-icon-el-${data.id}"></i>
+        </div>
+        <div class="tool-step-name" id="step-name-${data.id}">
+          <strong>${escapeHTML(data.action)}</strong>
+          <span style="color:var(--text-muted)"> — ${escapeHTML(data.name || '')}</span>
+        </div>
+        <span class="tool-step-status-badge ${status}" id="step-badge-${data.id}">${badgeLabel}</span>
+      </div>
+    `;
+
+    chatFeed.appendChild(card);
+    scrollToBottom();
+  }
+
+  function updateToolStepCard(stepId, status) {
+    const card  = document.getElementById(`step-card-${stepId}`);
+    const icon  = document.getElementById(`step-icon-${stepId}`);
+    const iconEl = document.getElementById(`step-icon-el-${stepId}`);
+    const badge = document.getElementById(`step-badge-${stepId}`);
+
+    if (!card) return;
+
+    card.classList.remove('status-running');
+    card.classList.add(`status-${status}`);
+
+    if (icon) icon.className = `tool-step-icon`;
+
+    if (iconEl) {
+      iconEl.className = status === 'success'
+        ? 'bi bi-check-circle-fill'
+        : 'bi bi-x-circle-fill';
+    }
+
+    if (badge) {
+      badge.className  = `tool-step-status-badge ${status}`;
+      badge.textContent = status === 'success' ? 'Done' : 'Error';
+    }
+  }
+
+  /* ──────────────────────────────────────────
+     SCHEDULER SLIDE-OVER PANEL
+  ────────────────────────────────────────── */
+  function openScheduler() {
+    schedulerOverlay.classList.add('is-open');
+    schedulerPanel.classList.add('is-open');
+    schedulerOpen = true;
+    loadSchedulerPanel();
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeScheduler() {
+    schedulerOverlay.classList.remove('is-open');
+    schedulerPanel.classList.remove('is-open');
+    schedulerOpen = false;
+    document.body.style.overflow = '';
+  }
+
+  btnOpenScheduler.addEventListener('click', openScheduler);
+  btnCloseScheduler.addEventListener('click', closeScheduler);
+  schedulerOverlay.addEventListener('click', closeScheduler);
+
+  // Keyboard ESC to close
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && schedulerOpen) closeScheduler();
+  });
+
+  /* ──────────────────────────────────────────
+     LOAD SCHEDULER DATA
+  ────────────────────────────────────────── */
+  function loadSchedulerPanel() {
+    schedulerPanelBody.innerHTML = `
+      <div class="text-center py-5" style="color:var(--text-muted);font-size:0.8rem;">
+        <div class="spinner-border spinner-border-sm text-secondary me-2" role="status"></div>
+        Fetching routines...
+      </div>
+    `;
+    fetch('/api/routines')
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'success') {
+          renderSchedulerPanel(data.routines);
         } else {
-            body.classList.remove('theme-light');
-            body.classList.add('theme-dark');
-            themeIcon.className = 'bi bi-sun-fill text-warning fs-8';
-            localStorage.setItem('theme', 'dark');
+          schedulerPanelBody.innerHTML = `
+            <div style="color:var(--rose);font-size:0.8rem;padding:20px;">
+              Error: ${escapeHTML(data.message)}
+            </div>
+          `;
         }
+      })
+      .catch(() => {
+        schedulerPanelBody.innerHTML = `
+          <div style="color:var(--rose);font-size:0.8rem;padding:20px;">
+            Failed to load routines.
+          </div>
+        `;
+      });
+  }
+
+  function renderSchedulerPanel(routines) {
+    if (!routines || routines.length === 0) {
+      schedulerPanelBody.innerHTML = `
+        <div class="scheduler-empty">
+          <i class="bi bi-calendar-x"></i>
+          <p>No routines scheduled yet.<br>Create your first background routine.</p>
+        </div>
+      `;
+      return;
     }
 
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    setTheme(savedTheme);
+    schedulerPanelBody.innerHTML = '';
+    routines.forEach((r, i) => {
+      const isPaused  = r.status === 'paused';
+      const lastRun   = r.last_run ? r.last_run.slice(0, 19).replace('T', ' ') : '—';
+      const nextRun   = r.next_run ? r.next_run.slice(0, 19).replace('T', ' ') : '—';
 
-    themeToggle.addEventListener('click', () => {
-        if (body.classList.contains('theme-dark')) {
-            setTheme('light');
-        } else {
-            setTheme('dark');
-        }
+      const card = document.createElement('div');
+      card.className = 'routine-card';
+      card.style.animationDelay = `${i * 0.04}s`;
+
+      card.innerHTML = `
+        <div class="routine-card-top">
+          <div class="routine-card-name" title="${escapeHTML(r.name)}">${escapeHTML(r.name)}</div>
+          <span class="routine-status-pill ${isPaused ? 'paused' : 'active'}">${isPaused ? 'Paused' : 'Active'}</span>
+        </div>
+
+        <div class="routine-meta">
+          <div class="routine-meta-row">
+            <i class="bi bi-clock"></i>
+            <span>Schedule: <span class="val">${escapeHTML(r.schedule)}</span></span>
+          </div>
+          <div class="routine-meta-row">
+            <i class="bi bi-cpu"></i>
+            <span>Type: <span class="val">${escapeHTML(r.type)}</span></span>
+          </div>
+          <div class="routine-meta-row">
+            <i class="bi bi-arrow-left-right"></i>
+            <span>Last: <span class="val">${lastRun}</span></span>
+          </div>
+          <div class="routine-meta-row">
+            <i class="bi bi-arrow-right"></i>
+            <span>Next: <span class="val">${nextRun}</span></span>
+          </div>
+        </div>
+
+        <div class="routine-action-snippet">${escapeHTML(r.action)}</div>
+
+        <div class="routine-actions">
+          <button class="btn-routine btn-trigger" data-action="trigger" data-name="${escapeHTML(r.name)}">
+            <i class="bi bi-play-fill"></i> Run
+          </button>
+          <button class="btn-routine btn-toggle-pause" data-action="toggle-pause" data-name="${escapeHTML(r.name)}" data-status="${r.status}">
+            <i class="bi ${isPaused ? 'bi-play-circle' : 'bi-pause-fill'}"></i> ${isPaused ? 'Resume' : 'Pause'}
+          </button>
+          <button class="btn-routine" data-action="view-logs" data-name="${escapeHTML(r.name)}">
+            <i class="bi bi-list-task"></i> Logs
+          </button>
+          <button class="btn-routine btn-delete" data-action="delete" data-name="${escapeHTML(r.name)}">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      `;
+
+      // Wire buttons
+      card.querySelectorAll('[data-action]').forEach(btn => {
+        btn.addEventListener('click', () => handleRoutineAction(btn));
+      });
+
+      schedulerPanelBody.appendChild(card);
     });
+  }
 
-    // ---------------------------------------------
-    // Socket.IO Status Events
-    // ---------------------------------------------
-    socket.on('connect', () => {
-        connectionStatus.innerHTML = '<span class="status-dot online animate-pulse" title="Socket.IO Live Connected"></span>';
-    });
+  function handleRoutineAction(btn) {
+    const action = btn.getAttribute('data-action');
+    const name   = btn.getAttribute('data-name');
 
-    socket.on('disconnect', () => {
-        connectionStatus.innerHTML = '<span class="status-dot offline" title="Disconnected"></span>';
-    });
-
-    // Reset workspace trigger
-    btnReset.addEventListener('click', () => {
-        if (confirm('Are you sure you want to reset the workspace? This will restore orchestrator.py to defaults.')) {
-            fetch('/api/reset', { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    chatFeed.innerHTML = `
-                        <div class="trajectory-log text-secondary fs-8 mb-4">
-                            [System Reset]: Workspace initialized cleanly. Ready for next prompt.
-                        </div>
-                    `;
-                });
-        }
-    });
-
-    // ---------------------------------------------
-    // Routines Scheduler (Modal-based)
-    // ---------------------------------------------
-    btnOpenScheduler.addEventListener('click', () => {
-        routinesDashboardModal.show();
-        loadSchedulerDashboard();
-    });
-
-    function loadSchedulerDashboard() {
-        fetch('/api/routines')
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    renderRoutinesDashboard(data.routines);
-                } else {
-                    schedulerContainer.innerHTML = `<div class="text-danger fs-8 p-3">Error fetching routines database: ${data.message}</div>`;
-                }
-            })
-            .catch(() => {
-                schedulerContainer.innerHTML = `<div class="text-danger fs-8 p-3">Failed to load routines database.</div>`;
-            });
-    }
-
-    function renderRoutinesDashboard(routines) {
-        if (!routines || routines.length === 0) {
-            schedulerContainer.innerHTML = `
-                <div class="text-center text-muted py-5 fs-8">
-                    <i class="bi bi-calendar-event display-6 text-muted mb-2 d-block"></i>
-                    No crons or intervals configured in scheduler.
-                </div>
-            `;
-            return;
-        }
-
-        schedulerContainer.innerHTML = '';
-        routines.forEach(r => {
-            const card = document.createElement('div');
-            card.className = 'routine-dashboard-card animate-fade-in';
-            
-            const isPaused = r.status === 'paused';
-            const badgeClass = isPaused ? 'paused' : 'active';
-            const statusLabel = isPaused ? 'Paused' : 'Active';
-
-            const lastRunClean = r.last_run ? r.last_run.substring(0, 19).replace('T', ' ') : 'Never';
-            const nextRunClean = r.next_run ? r.next_run.substring(0, 19).replace('T', ' ') : 'N/A';
-
-            card.innerHTML = `
-                <div class="routine-card-header justify-content-between">
-                    <span class="routine-card-title">${escapeHTML(r.name)}</span>
-                    <span class="routine-badge-status ${badgeClass}">${statusLabel}</span>
-                </div>
-                
-                <div class="routine-meta-item">
-                    <i class="bi bi-clock"></i> <span>Schedule: <strong class="text-white">${escapeHTML(r.schedule)}</strong></span>
-                </div>
-                <div class="routine-meta-item">
-                    <i class="bi bi-cpu"></i> <span>Type: <span class="badge bg-secondary font-mono fs-9 text-uppercase">${escapeHTML(r.type)}</span></span>
-                </div>
-                <div class="routine-code-block">${escapeHTML(r.action)}</div>
-                
-                <div class="routine-meta-item">
-                    <i class="bi bi-arrow-left-right"></i> <span>Last run: ${lastRunClean}</span>
-                </div>
-                <div class="routine-meta-item">
-                    <i class="bi bi-arrow-right"></i> <span>Next run: ${nextRunClean}</span>
-                </div>
-                
-                <div class="routine-card-actions">
-                    <button class="btn btn-routine-action" data-action="trigger" data-name="${r.name}"><i class="bi bi-play-fill text-success"></i> Trigger</button>
-                    <button class="btn btn-routine-action" data-action="toggle-pause" data-name="${r.name}" data-status="${r.status}">
-                        <i class="bi ${isPaused ? 'bi-check-circle text-primary' : 'bi-pause-fill text-warning'}"></i> ${isPaused ? 'Resume' : 'Pause'}
-                    </button>
-                    <button class="btn btn-routine-action" data-action="view-logs" data-name="${r.name}"><i class="bi bi-list-task text-info"></i> Logs</button>
-                    <button class="btn btn-routine-action danger ms-auto" data-action="delete" data-name="${r.name}"><i class="bi bi-trash"></i></button>
-                </div>
-            `;
-
-            // Wire action buttons
-            card.querySelectorAll('.btn-routine-action').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const action = btn.getAttribute('data-action');
-                    const name = btn.getAttribute('data-name');
-                    
-                    if (action === 'trigger') {
-                        btn.disabled = true;
-                        fetch(`/api/routines/${encodeURIComponent(name)}/trigger`, { method: 'POST' })
-                            .then(res => res.json())
-                            .then(data => {
-                                alert(data.message);
-                                loadSchedulerDashboard();
-                            })
-                            .finally(() => btn.disabled = false);
-                    } 
-                    else if (action === 'toggle-pause') {
-                        const status = btn.getAttribute('data-status');
-                        const endpoint = status === 'paused' ? 'resume' : 'pause';
-                        btn.disabled = true;
-                        fetch(`/api/routines/${encodeURIComponent(name)}/${endpoint}`, { method: 'POST' })
-                            .then(res => res.json())
-                            .then(data => {
-                                loadSchedulerDashboard();
-                            })
-                            .finally(() => btn.disabled = false);
-                    }
-                    else if (action === 'view-logs') {
-                        openRoutineLogsModal(name);
-                    }
-                    else if (action === 'delete') {
-                        if (confirm(`Delete routine '${name}' and all its execution logs?`)) {
-                            fetch(`/api/routines/${encodeURIComponent(name)}`, { method: 'DELETE' })
-                                .then(res => res.json())
-                                .then(data => {
-                                    loadSchedulerDashboard();
-                                });
-                        }
-                    }
-                });
-            });
-
-            schedulerContainer.appendChild(card);
-        });
-    }
-
-    // Modal Trigger for Add Routine
-    btnAddRoutineModal.addEventListener('click', () => {
-        createRoutineForm.reset();
-        routineErrorAlert.classList.add('d-none');
-        addRoutineModal.show();
-    });
-
-    // Create Routine Form Submit
-    createRoutineForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        routineErrorAlert.classList.add('d-none');
-        
-        const payload = {
-            name: document.getElementById('routine-name').value.trim(),
-            schedule: document.getElementById('routine-schedule').value.trim(),
-            type: document.getElementById('routine-type').value,
-            action: document.getElementById('routine-action').value.trim(),
-            timeout: parseInt(document.getElementById('routine-timeout').value)
-        };
-
-        fetch('/api/routines', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        })
-        .then(res => res.json())
+    if (action === 'trigger') {
+      btn.disabled = true;
+      fetch(`/api/routines/${encodeURIComponent(name)}/trigger`, { method: 'POST' })
+        .then(r => r.json())
         .then(data => {
-            if (data.status === 'success') {
-                addRoutineModal.hide();
-                loadSchedulerDashboard();
-            } else {
-                routineErrorAlert.textContent = data.message;
-                routineErrorAlert.classList.remove('d-none');
-            }
+          showToast(data.message, data.status === 'success' ? 'success' : 'error');
+          loadSchedulerPanel();
         })
-        .catch(err => {
-            routineErrorAlert.textContent = 'Failed to submit routine request.';
-            routineErrorAlert.classList.remove('d-none');
-        });
+        .finally(() => btn.disabled = false);
+    }
+    else if (action === 'toggle-pause') {
+      const status   = btn.getAttribute('data-status');
+      const endpoint = status === 'paused' ? 'resume' : 'pause';
+      btn.disabled   = true;
+      fetch(`/api/routines/${encodeURIComponent(name)}/${endpoint}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(() => loadSchedulerPanel())
+        .finally(() => btn.disabled = false);
+    }
+    else if (action === 'view-logs') {
+      openLogsModal(name);
+    }
+    else if (action === 'delete') {
+      if (!confirm(`Delete routine '${name}'? This cannot be undone.`)) return;
+      fetch(`/api/routines/${encodeURIComponent(name)}`, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(() => loadSchedulerPanel());
+    }
+  }
+
+  /* ──────────────────────────────────────────
+     ADD ROUTINE MODAL
+  ────────────────────────────────────────── */
+  btnAddRoutineTrigger.addEventListener('click', () => {
+    createRoutineForm.reset();
+    routineErrorAlert.classList.add('d-none');
+    addRoutineModal.show();
+  });
+
+  createRoutineForm.addEventListener('submit', e => {
+    e.preventDefault();
+    routineErrorAlert.classList.add('d-none');
+
+    const payload = {
+      name:     document.getElementById('routine-name').value.trim(),
+      schedule: document.getElementById('routine-schedule').value.trim(),
+      type:     document.getElementById('routine-type').value,
+      action:   document.getElementById('routine-action').value.trim(),
+      timeout:  parseInt(document.getElementById('routine-timeout').value)
+    };
+
+    fetch('/api/routines', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'success') {
+        addRoutineModal.hide();
+        loadSchedulerPanel();
+        showToast(`Routine '${payload.name}' scheduled.`, 'success');
+      } else {
+        routineErrorAlert.textContent = data.message;
+        routineErrorAlert.classList.remove('d-none');
+      }
+    })
+    .catch(() => {
+      routineErrorAlert.textContent = 'Request failed. Please try again.';
+      routineErrorAlert.classList.remove('d-none');
     });
+  });
 
-    // Routine Logs Viewer
-    function openRoutineLogsModal(name) {
-        routineLogsModalName.textContent = name;
-        routineLogsOutputContainer.innerHTML = `<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-secondary me-2" role="status"></div>Loading logs...</div>`;
-        routineLogsModal.show();
+  /* ──────────────────────────────────────────
+     LOGS MODAL
+  ────────────────────────────────────────── */
+  function openLogsModal(name) {
+    logModalRoutineName.textContent = name;
+    routineLogsContainer.innerHTML = `
+      <div class="text-center py-5" style="color:var(--text-muted);font-size:0.8rem;">
+        <div class="spinner-border spinner-border-sm text-secondary me-2" role="status"></div>
+        Loading logs...
+      </div>
+    `;
+    routineLogsModal.show();
 
-        fetch(`/api/routines/${encodeURIComponent(name)}/logs?limit=30`)
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    renderRoutineLogsList(data.logs);
-                } else {
-                    routineLogsOutputContainer.innerHTML = `<div class="text-danger p-3">Error: ${data.message}</div>`;
-                }
-            })
-            .catch(() => {
-                routineLogsOutputContainer.innerHTML = `<div class="text-danger p-3">Failed to retrieve logs.</div>`;
-            });
+    fetch(`/api/routines/${encodeURIComponent(name)}/logs?limit=30`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'success') renderLogs(data.logs);
+        else routineLogsContainer.innerHTML = `<div class="p-4" style="color:var(--rose);">Error: ${escapeHTML(data.message)}</div>`;
+      })
+      .catch(() => {
+        routineLogsContainer.innerHTML = `<div class="p-4" style="color:var(--rose);">Failed to retrieve logs.</div>`;
+      });
+  }
+
+  function renderLogs(logs) {
+    if (!logs || logs.length === 0) {
+      routineLogsContainer.innerHTML = `
+        <div class="text-center py-5" style="color:var(--text-muted);font-size:0.8rem;">
+          No execution history found.
+        </div>
+      `;
+      return;
     }
 
-    function renderRoutineLogsList(logs) {
-        if (!logs || logs.length === 0) {
-            routineLogsOutputContainer.innerHTML = `<div class="text-muted p-4 text-center fs-8">No historical execution logs found for this routine.</div>`;
-            return;
-        }
+    routineLogsContainer.innerHTML = '';
+    logs.forEach(log => {
+      const triggered = log.triggered_at.slice(0, 19).replace('T', ' ');
+      const finished  = log.finished_at  ? log.finished_at.slice(0, 19).replace('T', ' ') : '—';
 
-        routineLogsOutputContainer.innerHTML = '';
-        logs.forEach(log => {
-            const item = document.createElement('div');
-            item.className = 'routine-log-row-item';
+      let statusClass = 'running';
+      if (log.status === 'success') statusClass = 'success';
+      else if (log.status === 'failure') statusClass = 'failure';
+      else if (log.status === 'timeout') statusClass = 'timeout';
 
-            const trigClean = log.triggered_at.substring(0, 19).replace('T', ' ');
-            const finClean = log.finished_at ? log.finished_at.substring(0, 19).replace('T', ' ') : 'N/A';
-            
-            let statusBadgeClass = 'running';
-            if (log.status === 'success') statusBadgeClass = 'success';
-            else if (log.status === 'failure') statusBadgeClass = 'failure';
-            else if (log.status === 'timeout') statusBadgeClass = 'timeout';
+      const row = document.createElement('div');
+      row.className = 'log-row';
+      row.innerHTML = `
+        <div class="d-flex align-items-center justify-content-between mb-2" style="font-size:0.78rem;">
+          <span style="color:var(--text-secondary);">
+            Triggered: <strong style="color:var(--text-primary)">${triggered}</strong>
+            &nbsp;·&nbsp;
+            Finished: ${finished}
+          </span>
+          <span class="log-status-badge ${statusClass}">${log.status}</span>
+        </div>
+        ${log.output ? `
+          <div style="font-size:0.7rem;color:var(--text-muted);font-weight:600;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em;">Output</div>
+          <pre class="log-pre">${escapeHTML(log.output)}</pre>
+        ` : ''}
+        ${log.error ? `
+          <div style="font-size:0.7rem;color:var(--rose);font-weight:600;margin-bottom:4px;margin-top:8px;text-transform:uppercase;letter-spacing:0.06em;">Error</div>
+          <pre class="log-pre error-pre">${escapeHTML(log.error)}</pre>
+        ` : ''}
+      `;
+      routineLogsContainer.appendChild(row);
+    });
+  }
 
-            item.innerHTML = `
-                <div class="d-flex align-items-center justify-content-between mb-2 fs-8">
-                    <span class="text-secondary">Triggered: <strong class="text-white">${trigClean}</strong> &bull; Finished: ${finClean}</span>
-                    <span class="routine-log-badge-status ${statusBadgeClass}">${log.status}</span>
-                </div>
-                
-                ${log.output ? `
-                    <div class="fs-9 text-secondary fw-semibold mb-1">Standard Output:</div>
-                    <pre class="bg-black border p-2 rounded text-secondary fs-9 font-mono mb-2" style="white-space: pre-wrap; max-height: 120px; overflow-y: auto;">${escapeHTML(log.output)}</pre>
-                ` : ''}
+  /* ──────────────────────────────────────────
+     TOAST NOTIFICATION
+  ────────────────────────────────────────── */
+  function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+      position: fixed;
+      bottom: 90px;
+      right: 24px;
+      z-index: 9999;
+      background: var(--bg-elevated);
+      border: 1px solid ${type === 'success' ? 'var(--emerald-dim)' : 'var(--rose-dim)'};
+      border-left: 3px solid ${type === 'success' ? 'var(--emerald)' : 'var(--rose)'};
+      color: var(--text-primary);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.8rem;
+      padding: 12px 18px;
+      border-radius: 10px;
+      box-shadow: var(--panel-shadow);
+      max-width: 320px;
+      animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      backdrop-filter: var(--glass-blur);
+    `;
+    toast.textContent = message;
 
-                ${log.error ? `
-                    <div class="fs-9 text-danger fw-semibold mb-1">Standard Error / Failures:</div>
-                    <pre class="bg-black border border-danger p-2 rounded text-danger fs-9 font-mono" style="white-space: pre-wrap; max-height: 120px; overflow-y: auto;">${escapeHTML(log.error)}</pre>
-                ` : ''}
-            `;
-            routineLogsOutputContainer.appendChild(item);
-        });
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes toastIn {
+        from { opacity: 0; transform: translateY(12px) scale(0.96); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      @keyframes toastOut {
+        from { opacity: 1; transform: translateY(0) scale(1); }
+        to   { opacity: 0; transform: translateY(8px) scale(0.96); }
+      }
+    `;
+    document.head.appendChild(style);
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+      toast.style.animation = 'toastOut 0.25s ease forwards';
+      setTimeout(() => toast.remove(), 250);
+    }, 3200);
+  }
+
+  /* ──────────────────────────────────────────
+     ESCAPE HTML
+  ────────────────────────────────────────── */
+  function escapeHTML(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>'"\n]/g,
+      c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c] || c)
+    );
+  }
+
+  /* ──────────────────────────────────────────
+     KEYBOARD SHORTCUTS
+  ────────────────────────────────────────── */
+  document.addEventListener('keydown', e => {
+    // Focus input with '/' when not already focused
+    if (e.key === '/' && document.activeElement !== promptInput && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      promptInput.focus();
     }
+  });
 
-    // ---------------------------------------------
-    // Chat Submission & Feed (Center Panel)
-    // ---------------------------------------------
-    promptForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const prompt = promptInput.value.trim();
-        if (!prompt) return;
+  /* ──────────────────────────────────────────
+     INIT
+  ────────────────────────────────────────── */
+  promptInput.focus();
 
-        // Render user prompt in the feed
-        const userHtml = `
-            <div class="user-msg-row my-3 animate-fade-in">
-                <div class="user-msg-box shadow-sm">
-                    ${escapeHTML(prompt)}
-                </div>
-            </div>
-        `;
-        chatFeed.insertAdjacentHTML('beforeend', userHtml);
-        promptInput.value = '';
-
-        // Disable inputs during processing
-        btnSubmit.disabled = true;
-        promptInput.disabled = true;
-        statusSpinner.classList.remove('d-none');
-
-        // Close any lingering thought blocks
-        const oldThought = document.getElementById('active-thought');
-        if (oldThought) oldThought.remove();
-
-        socket.emit('start_agent', { prompt: prompt });
-    });
-
-    // ---------------------------------------------
-    // WebSockets Diagnostics Inline Trajectory Stream
-    // ---------------------------------------------
-    socket.on('agent_status', (data) => {
-        if (data.status === 'finished') {
-            btnSubmit.disabled = false;
-            promptInput.disabled = false;
-            statusSpinner.classList.add('d-none');
-            currentResponseBlock = null;
-            
-            // Remove active thought indicator
-            const activeThought = document.getElementById('active-thought');
-            if (activeThought) activeThought.remove();
-
-            // Refresh systems status if modal is currently open
-            const routinesModalEl = document.getElementById('routinesDashboardModal');
-            if (routinesModalEl.classList.contains('show')) {
-                loadSchedulerDashboard();
-            }
-        }
-    });
-
-    socket.on('trajectory_log', (data) => {
-        const logHtml = `
-            <div class="trajectory-log text-secondary fs-9 my-1 font-mono animate-fade-in" style="opacity: 0.85;">
-                <span class="text-muted">&gt;</span> ${escapeHTML(data.log)}
-            </div>
-        `;
-        chatFeed.insertAdjacentHTML('beforeend', logHtml);
-        chatFeedContainer.scrollTop = chatFeedContainer.scrollHeight;
-    });
-
-    socket.on('thought_start', (data) => {
-        const duration = data.duration || 1;
-        const oldThought = document.getElementById('active-thought');
-        if (oldThought) oldThought.remove();
-
-        const thoughtHtml = `
-            <div class="thought-log-item my-2 animate-fade-in" id="active-thought" style="font-size: 0.78rem;">
-                <i class="bi bi-cpu-fill text-primary animate-pulse me-1"></i>
-                <span class="text-secondary">Thinking (${duration}s)...</span>
-            </div>
-        `;
-        chatFeed.insertAdjacentHTML('beforeend', thoughtHtml);
-        chatFeedContainer.scrollTop = chatFeedContainer.scrollHeight;
-    });
-
-    socket.on('step_start', (data) => {
-        const action = data.action;
-        const stepId = data.id;
-
-        // Remove active thought indicator when a tool starts
-        const activeThought = document.getElementById('active-thought');
-        if (activeThought) activeThought.remove();
-
-        // Render clean, inline tool running card
-        const cardHtml = `
-            <div class="running-tool-card my-2 p-2 rounded border bg-card-blur d-flex align-items-center gap-2 animate-fade-in" id="step-card-${stepId}" style="font-family: 'Fira Code', monospace; font-size: 0.78rem;">
-                <i class="bi bi-gear-fill text-primary animate-spin" id="step-icon-${stepId}"></i>
-                <span id="step-text-${stepId}">Running tool: <strong class="text-white">${escapeHTML(action)}</strong> (${escapeHTML(data.name)})</span>
-            </div>
-        `;
-        chatFeed.insertAdjacentHTML('beforeend', cardHtml);
-        chatFeedContainer.scrollTop = chatFeedContainer.scrollHeight;
-    });
-
-    socket.on('step_log', (data) => {
-        // Only show running tool inline, omit standard output logs
-    });
-
-    socket.on('step_complete', (data) => {
-        const stepId = data.id;
-        const cardText = document.getElementById(`step-text-${stepId}`);
-        const cardIcon = document.getElementById(`step-icon-${stepId}`);
-        
-        if (cardText && cardIcon) {
-            if (data.status === 'success') {
-                cardIcon.className = 'bi bi-check-circle-fill text-success';
-                cardIcon.classList.remove('animate-spin');
-                cardText.innerHTML = `Ran tool: <strong class="text-white">${cardText.querySelector('strong').textContent}</strong> (Success)`;
-            } else {
-                cardIcon.className = 'bi bi-x-circle-fill text-danger';
-                cardIcon.classList.remove('animate-spin');
-                cardText.innerHTML = `Ran tool: <strong class="text-white">${cardText.querySelector('strong').textContent}</strong> (Error)`;
-            }
-        }
-    });
-
-    // ---------------------------------------------
-    // Chat Stream Assistant Blocks
-    // ---------------------------------------------
-    socket.on('thought_chunk', (data) => {
-        const activeThought = document.getElementById('active-thought');
-        if (activeThought) activeThought.remove();
-
-        if (!currentResponseBlock) {
-            const blockId = `response-${Date.now()}`;
-            const blockHtml = `
-                <div class="assistant-response-row my-3 animate-fade-in">
-                    <div class="assistant-response-text" id="${blockId}"></div>
-                </div>
-            `;
-            chatFeed.insertAdjacentHTML('beforeend', blockHtml);
-            currentResponseBlock = document.getElementById(blockId);
-            currentResponseText = '';
-        }
-        currentResponseText += data.text;
-        
-        if (window.marked) {
-            currentResponseBlock.innerHTML = marked.parse(currentResponseText);
-        } else {
-            currentResponseBlock.textContent = currentResponseText;
-        }
-        
-        // Auto scroll
-        chatFeedContainer.scrollTop = chatFeedContainer.scrollHeight;
-    });
-
-    function escapeHTML(str) {
-        if (!str) return '';
-        return str.replace(/[&<>'"]/g, 
-            tag => ({
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                "'": '&#39;',
-                '"': '&quot;'
-            }[tag] || tag)
-        );
-    }
-});
+}); // DOMContentLoaded
