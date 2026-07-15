@@ -52,15 +52,34 @@ document.addEventListener('DOMContentLoaded', () => {
   const createRoutineForm       = document.getElementById('create-routine-form');
   const routineErrorAlert       = document.getElementById('routine-error-alert');
 
+  // Edit-routine modal
+  const editRoutineForm         = document.getElementById('edit-routine-form');
+  const editRoutineError        = document.getElementById('edit-routine-error');
+  const editRoutineNameHidden   = document.getElementById('edit-routine-name');
+  const editRoutineNameLabel    = document.getElementById('edit-routine-name-label');
+
   // Logs modal
   const logModalRoutineName     = document.getElementById('log-modal-routine-name');
   const routineLogsContainer    = document.getElementById('routine-logs-output-container');
+
+  // Notification center
+  const btnNotifications        = document.getElementById('btn-notifications');
+  const notifBellWrap           = document.getElementById('notif-bell-wrap');
+  const notifBellIcon           = document.getElementById('notif-bell-icon');
+  const notifBadge              = document.getElementById('notif-badge');
+  const notifDropdown           = document.getElementById('notif-dropdown');
+  const notifList               = document.getElementById('notif-list');
+  const notifCountChip          = document.getElementById('notif-count-chip');
+  const btnMarkAllRead          = document.getElementById('btn-mark-all-read');
+  const btnClearNotifs          = document.getElementById('btn-clear-notifs');
 
   /* ──────────────────────────────────────────
      BOOTSTRAP MODALS
   ────────────────────────────────────────── */
   const addRoutineModal    = new bootstrap.Modal(document.getElementById('addRoutineModal'));
   const routineLogsModal   = new bootstrap.Modal(document.getElementById('routineLogsModal'));
+  const editRoutineModal   = new bootstrap.Modal(document.getElementById('editRoutineModal'));
+  const clearOptionsModal  = new bootstrap.Modal(document.getElementById('clearOptionsModal'));
 
   /* ──────────────────────────────────────────
      STATE
@@ -69,6 +88,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentResponseText  = '';
   let isAgentRunning       = false;
   let schedulerOpen        = false;
+  let notifDropdownOpen    = false;
+  let notifUnreadCount     = 0;
   let finishTimeout        = null;  // failsafe: reset UI if agent_status never arrives
 
   /* ──────────────────────────────────────────
@@ -171,24 +192,70 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* ──────────────────────────────────────────
-     RESET WORKSPACE
+     CLEAR / RESET ENVIRONMENT OPTIONS
   ────────────────────────────────────────── */
-  function doReset() {
-    if (!confirm('Reset workspace? This will restore orchestrator.py to defaults.')) return;
-    fetch('/api/reset', { method: 'POST' })
-      .then(r => r.json())
-      .then(() => {
-        const hero = document.getElementById('welcome-hero');
-        chatFeed.innerHTML = '';
-        if (hero) chatFeed.appendChild(hero);
-        appendTrajectoryLog('[System Reset]: Workspace initialized cleanly. Ready for next directive.');
-        currentResponseBlock = null;
-        currentResponseText  = '';
-      });
+  const btnClearChatOnly      = document.getElementById('btn-clear-chat-only');
+  const btnClearWorkspaceOnly = document.getElementById('btn-clear-workspace-only');
+  const btnClearBoth          = document.getElementById('btn-clear-both');
+
+  function resetChatFeedUI() {
+    const hero = document.getElementById('welcome-hero');
+    chatFeed.innerHTML = '';
+    if (hero) chatFeed.appendChild(hero);
+    currentResponseBlock = null;
+    currentResponseText  = '';
   }
 
-  btnReset.addEventListener('click', doReset);
-  if (mobBtnReset) mobBtnReset.addEventListener('click', doReset);
+  // Option 1: Clear Conversation Only
+  if (btnClearChatOnly) {
+    btnClearChatOnly.addEventListener('click', () => {
+      clearOptionsModal.hide();
+      if (!confirm('Clear all conversation history? This cannot be undone.')) return;
+      
+      fetch('/api/history', { method: 'DELETE' })
+        .then(r => r.json())
+        .then(() => {
+          resetChatFeedUI();
+          appendTrajectoryLog('[Console Log]: Conversation history cleared successfully.');
+          showToast('Conversation history cleared.', 'success');
+        });
+    });
+  }
+
+  // Option 2: Clear Workspace Sandbox Only
+  if (btnClearWorkspaceOnly) {
+    btnClearWorkspaceOnly.addEventListener('click', () => {
+      clearOptionsModal.hide();
+      if (!confirm('Clear all files in workspace sandbox? This will permanently delete all created files.')) return;
+
+      fetch('/api/reset', { method: 'POST' })
+        .then(r => r.json())
+        .then(() => {
+          appendTrajectoryLog('[Console Log]: Sandbox workspace files deleted.');
+          showToast('Workspace files cleared.', 'success');
+        });
+    });
+  }
+
+  // Option 3: Wipe Both
+  if (btnClearBoth) {
+    btnClearBoth.addEventListener('click', () => {
+      clearOptionsModal.hide();
+      if (!confirm('Wipe everything? This will clear all chat history and delete all workspace files.')) return;
+
+      // Run both cleanups
+      Promise.all([
+        fetch('/api/history', { method: 'DELETE' }),
+        fetch('/api/reset', { method: 'POST' })
+      ])
+      .then(() => {
+        resetChatFeedUI();
+        appendTrajectoryLog('[Console Log]: System reset complete. History and sandbox wiped.');
+        showToast('Full system wipe complete.', 'success');
+      });
+    });
+  }
+
 
 
   /* ──────────────────────────────────────────
@@ -521,6 +588,9 @@ document.addEventListener('DOMContentLoaded', () => {
           <button class="btn-routine" data-action="view-logs" data-name="${escapeHTML(r.name)}">
             <i class="bi bi-list-task"></i> Logs
           </button>
+          <button class="btn-routine" data-action="edit" data-name="${escapeHTML(r.name)}" data-schedule="${escapeHTML(r.schedule)}" data-action-val="${escapeHTML(r.action)}" data-timeout="${r.timeout}">
+            <i class="bi bi-pencil"></i> Edit
+          </button>
           <button class="btn-routine btn-delete" data-action="delete" data-name="${escapeHTML(r.name)}">
             <i class="bi bi-trash"></i>
           </button>
@@ -558,6 +628,13 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(r => r.json())
         .then(() => loadSchedulerPanel())
         .finally(() => btn.disabled = false);
+    }
+    else if (action === 'edit') {
+      const name      = btn.getAttribute('data-name');
+      const schedule  = btn.getAttribute('data-schedule');
+      const actionVal = btn.getAttribute('data-action-val');
+      const timeout   = btn.getAttribute('data-timeout');
+      openEditModal(name, schedule, actionVal, timeout);
     }
     else if (action === 'view-logs') {
       openLogsModal(name);
@@ -610,6 +687,52 @@ document.addEventListener('DOMContentLoaded', () => {
     .catch(() => {
       routineErrorAlert.textContent = 'Request failed. Please try again.';
       routineErrorAlert.classList.remove('d-none');
+    });
+  });
+
+  /* ──────────────────────────────────────────
+     EDIT ROUTINE MODAL
+  ────────────────────────────────────────── */
+  function openEditModal(name, schedule, actionVal, timeout) {
+    editRoutineNameHidden.value                          = name;
+    editRoutineNameLabel.textContent                     = name;
+    document.getElementById('edit-routine-schedule').value = schedule;
+    document.getElementById('edit-routine-action').value   = actionVal;
+    document.getElementById('edit-routine-timeout').value  = timeout;
+    editRoutineError.classList.add('d-none');
+    editRoutineModal.show();
+  }
+
+  editRoutineForm.addEventListener('submit', e => {
+    e.preventDefault();
+    editRoutineError.classList.add('d-none');
+
+    const name    = editRoutineNameHidden.value;
+    const payload = {
+      schedule: document.getElementById('edit-routine-schedule').value.trim(),
+      action:   document.getElementById('edit-routine-action').value.trim(),
+      timeout:  parseInt(document.getElementById('edit-routine-timeout').value)
+    };
+
+    fetch(`/api/routines/${encodeURIComponent(name)}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'success') {
+        editRoutineModal.hide();
+        loadSchedulerPanel();
+        showToast(`Routine '${name}' updated.`, 'success');
+      } else {
+        editRoutineError.textContent = data.message;
+        editRoutineError.classList.remove('d-none');
+      }
+    })
+    .catch(() => {
+      editRoutineError.textContent = 'Request failed. Please try again.';
+      editRoutineError.classList.remove('d-none');
     });
   });
 
@@ -745,7 +868,276 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       promptInput.focus();
     }
+    // ESC to close notification dropdown
+    if (e.key === 'Escape' && notifDropdownOpen) closeNotifDropdown();
   });
+
+  /* ──────────────────────────────────────────
+     NOTIFICATION CENTER
+  ────────────────────────────────────────── */
+
+  /** Converts an ISO timestamp to a relative-time string (e.g. '2m ago'). */
+  function relativeTime(isoStr) {
+    if (!isoStr) return '';
+    const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
+    if (diff < 5)   return 'just now';
+    if (diff < 60)  return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  }
+
+  /** Returns Bootstrap-icon class for a notification level. */
+  function levelIcon(level) {
+    const map = {
+      success: 'bi-check-circle-fill',
+      error:   'bi-x-circle-fill',
+      warning: 'bi-exclamation-triangle-fill',
+      info:    'bi-info-circle-fill'
+    };
+    return map[level] || map.info;
+  }
+
+  /** Updates the badge and header chip with the current unread count. */
+  function updateBadge(count) {
+    notifUnreadCount = Math.max(0, count);
+    if (notifUnreadCount > 0) {
+      notifBadge.textContent = notifUnreadCount > 99 ? '99+' : notifUnreadCount;
+      notifBadge.style.display = 'block';
+      notifCountChip.textContent = notifUnreadCount > 99 ? '99+' : notifUnreadCount;
+      notifCountChip.style.display = 'inline-block';
+      btnNotifications.classList.add('has-unread');
+    } else {
+      notifBadge.style.display = 'none';
+      notifCountChip.style.display = 'none';
+      btnNotifications.classList.remove('has-unread');
+    }
+  }
+
+  /** Shakes the bell icon for 600ms. */
+  function shakeBell() {
+    btnNotifications.classList.remove('shake');
+    // Force reflow to restart animation
+    void btnNotifications.offsetWidth;
+    btnNotifications.classList.add('shake');
+    setTimeout(() => btnNotifications.classList.remove('shake'), 700);
+  }
+
+  /** Briefly pops the badge (scale animation). */
+  function popBadge() {
+    notifBadge.classList.remove('pop');
+    void notifBadge.offsetWidth;
+    notifBadge.classList.add('pop');
+    setTimeout(() => notifBadge.classList.remove('pop'), 400);
+  }
+
+  /** Renders a single notification item DOM node. */
+  function buildNotifItem(n) {
+    const item = document.createElement('div');
+    item.className = `notif-item ${n.is_read ? '' : 'unread'}`;
+    item.dataset.id = n.id;
+
+    item.innerHTML = `
+      <div class="notif-level-icon ${escapeHTML(n.level)}">
+        <i class="bi ${levelIcon(n.level)}"></i>
+      </div>
+      <div class="notif-item-body">
+        <div class="notif-item-title">${escapeHTML(n.title)}</div>
+        <div class="notif-item-msg">${escapeHTML(n.message)}</div>
+        <div class="notif-item-time">${relativeTime(n.created_at)}</div>
+      </div>
+      ${!n.is_read ? '<div class="notif-unread-dot"></div>' : ''}
+    `;
+    return item;
+  }
+
+  /** Renders a full list of notifications into the dropdown. */
+  function renderNotifications(notifications) {
+    notifList.innerHTML = '';
+
+    if (!notifications || notifications.length === 0) {
+      notifList.innerHTML = `
+        <div class="notif-empty">
+          <i class="bi bi-bell-slash"></i>
+          <p>No notifications yet.<br>Scheduler events will appear here.</p>
+        </div>
+      `;
+      return;
+    }
+
+    notifications.forEach((n, i) => {
+      const item = buildNotifItem(n);
+      item.style.animationDelay = `${i * 0.03}s`;
+      notifList.appendChild(item);
+    });
+  }
+
+  /** Fetches notifications from the server and refreshes the dropdown. */
+  function loadNotifications() {
+    fetch('/api/notifications')
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'success') {
+          renderNotifications(data.notifications);
+          updateBadge(data.unread_count);
+        }
+      })
+      .catch(() => {/* silently fail for background poll */});
+  }
+
+  /** Opens the notification dropdown and marks everything as read. */
+  function openNotifDropdown() {
+    notifDropdown.classList.add('is-open');
+    notifDropdownOpen = true;
+    // Refresh content on open
+    loadNotifications();
+    // Mark all as read after a short delay
+    setTimeout(() => {
+      if (notifUnreadCount > 0) {
+        fetch('/api/notifications/mark-read', { method: 'POST' })
+          .then(() => {
+            updateBadge(0);
+            // Visually clear unread state on items
+            notifList.querySelectorAll('.notif-item.unread').forEach(el => {
+              el.classList.remove('unread');
+              const dot = el.querySelector('.notif-unread-dot');
+              if (dot) dot.remove();
+            });
+          });
+      }
+    }, 400);
+  }
+
+  /** Closes the notification dropdown. */
+  function closeNotifDropdown() {
+    notifDropdown.classList.remove('is-open');
+    notifDropdownOpen = false;
+  }
+
+  /** Toggles the notification dropdown. */
+  function toggleNotifDropdown() {
+    if (notifDropdownOpen) {
+      closeNotifDropdown();
+    } else {
+      openNotifDropdown();
+    }
+  }
+
+  // Bell click
+  btnNotifications.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleNotifDropdown();
+  });
+
+  // Click outside to close
+  document.addEventListener('click', e => {
+    if (notifDropdownOpen && !notifBellWrap.contains(e.target)) {
+      closeNotifDropdown();
+    }
+  });
+
+  // Mark all read button
+  btnMarkAllRead.addEventListener('click', e => {
+    e.stopPropagation();
+    fetch('/api/notifications/mark-read', { method: 'POST' })
+      .then(() => {
+        updateBadge(0);
+        notifList.querySelectorAll('.notif-item.unread').forEach(el => {
+          el.classList.remove('unread');
+          const dot = el.querySelector('.notif-unread-dot');
+          if (dot) dot.remove();
+        });
+      });
+  });
+
+  // Clear all button
+  btnClearNotifs.addEventListener('click', e => {
+    e.stopPropagation();
+    fetch('/api/notifications', { method: 'DELETE' })
+      .then(() => {
+        renderNotifications([]);
+        updateBadge(0);
+      });
+  });
+
+  // ── Real-time push via SocketIO ──────────────────────────────────────────
+  socket.on('notification_push', notif => {
+    // Increment unread count and animate bell
+    updateBadge(notifUnreadCount + 1);
+    shakeBell();
+    popBadge();
+
+    // Prepend to the list if dropdown is open
+    if (notifDropdownOpen) {
+      // Remove empty state if present
+      const empty = notifList.querySelector('.notif-empty');
+      if (empty) empty.remove();
+      const item = buildNotifItem({ ...notif, is_read: false });
+      notifList.insertBefore(item, notifList.firstChild);
+    }
+
+    // Also show a toast for immediate feedback
+    const levelToast = notif.level === 'success' ? 'success' : 'error';
+    showToast(`🔔 ${notif.title}`, levelToast);
+  });
+
+  // ── Conversation History ──────────────────────────────────────────────────
+  function loadHistory() {
+    fetch('/api/history')
+      .then(r => r.json())
+      .then(data => {
+        if (data.status !== 'success' || !data.events || data.events.length === 0) return;
+
+        // Hide welcome hero if we have previous messages
+        const hero = document.getElementById('welcome-hero');
+        if (hero) hero.remove();
+        const initLog = document.getElementById('init-log');
+        if (initLog) initLog.remove();
+
+        data.events.forEach(ev => {
+          if (ev.event_type === 'user_msg') {
+            appendUserMessage(ev.content);
+          } else if (ev.event_type === 'traj_log') {
+            appendTrajectoryLog(ev.content);
+          } else if (ev.event_type === 'tool_step') {
+            // Re-render tool step card with its status
+            const meta = ev.meta || {};
+            renderToolStepCard({
+              id: ev.id,
+              action: meta.action || 'tool',
+              name: (meta.name || '').replace(/^Running tool:\s*/, ''),
+              details: meta.details || ''
+            }, meta.status || 'success');
+          } else if (ev.event_type === 'agent_response') {
+            // Re-create assistant message body
+            const blockId = `resp-hist-${ev.id}`;
+            const row = document.createElement('div');
+            row.className = 'agent-response-row';
+            row.innerHTML = `
+              <div class="agent-avatar">AT</div>
+              <div class="agent-response-body">
+                <div class="agent-response-card" id="${blockId}"></div>
+              </div>
+            `;
+            chatFeed.appendChild(row);
+            const block = document.getElementById(blockId);
+            if (block) {
+              if (window.marked) {
+                block.innerHTML = marked.parse(ev.content);
+              } else {
+                block.textContent = ev.content;
+              }
+            }
+          }
+        });
+        scrollToBottom();
+      })
+      .catch(() => {});
+  }
+
+  // ── Initial load on page ready ────────────────────────────────────────────
+  loadNotifications();
+  loadHistory();
 
   /* ──────────────────────────────────────────
      INIT

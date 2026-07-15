@@ -61,9 +61,9 @@
 
         <div class="sidebar-divider"></div>
 
-        <!-- Reset -->
-        <button class="sidebar-btn danger-hover" id="btn-reset" data-tip="Reset Workspace" title="Reset Workspace">
-          <i class="bi bi-arrow-counterclockwise"></i>
+        <!-- Clear/Delete Options Trigger -->
+        <button class="sidebar-btn danger-hover" id="btn-reset" data-tip="Clear console/workspace" title="Clear console/workspace" data-bs-toggle="modal" data-bs-target="#clearOptionsModal">
+          <i class="bi bi-trash3"></i>
         </button>
 
         <!-- Theme toggle -->
@@ -93,6 +93,39 @@
           <span id="topbar-status-text">Ready</span>
         </div>
 
+        <!-- Notification Bell (always visible) -->
+        <div class="notif-bell-wrap" id="notif-bell-wrap">
+          <button class="notif-bell-btn" id="btn-notifications" title="Notifications" aria-label="Notifications">
+            <i class="bi bi-bell-fill" id="notif-bell-icon"></i>
+            <span class="notif-badge" id="notif-badge" style="display:none;">0</span>
+          </button>
+
+          <!-- Notification Dropdown -->
+          <div class="notif-dropdown" id="notif-dropdown" role="dialog" aria-label="Notification center">
+            <div class="notif-dropdown-header">
+              <div class="notif-dropdown-title">
+                <i class="bi bi-bell-fill" style="color:var(--indigo-light);font-size:13px;"></i>
+                Notifications
+                <span class="notif-count-chip" id="notif-count-chip" style="display:none;">0</span>
+              </div>
+              <div class="notif-header-actions">
+                <button class="notif-hdr-btn" id="btn-mark-all-read" title="Mark all as read">
+                  <i class="bi bi-check2-all"></i> Mark read
+                </button>
+                <button class="notif-hdr-btn notif-hdr-btn-danger" id="btn-clear-notifs" title="Clear all">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </div>
+            </div>
+            <div class="notif-list" id="notif-list">
+              <div class="notif-empty" id="notif-empty">
+                <i class="bi bi-bell-slash"></i>
+                <p>No notifications yet.<br>Scheduler events will appear here.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Mobile-only action buttons -->
         <div class="topbar-mobile-actions">
           <div class="topbar-divider"></div>
@@ -101,8 +134,8 @@
             <i class="bi bi-clock-history"></i>
           </button>
 
-          <button class="topbar-action-btn danger-hover" id="mob-btn-reset" title="Reset Workspace">
-            <i class="bi bi-arrow-counterclockwise"></i>
+          <button class="topbar-action-btn danger-hover" id="mob-btn-reset" title="Clear options" data-bs-toggle="modal" data-bs-target="#clearOptionsModal">
+            <i class="bi bi-trash3"></i>
           </button>
 
           <button class="topbar-action-btn" id="mob-theme-toggle" title="Toggle Theme">
@@ -279,6 +312,90 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Edit Routine -->
+  <div class="modal fade" id="editRoutineModal" tabindex="-1" aria-labelledby="editRoutineModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="editRoutineModalLabel">
+            <i class="bi bi-pencil-square me-2" style="color:var(--amber)"></i>Edit Routine — <span id="edit-routine-name-label" style="color:var(--text-secondary);font-weight:400;"></span>
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form id="edit-routine-form">
+          <input type="hidden" id="edit-routine-name">
+          <div class="modal-body">
+            <div class="mb-4">
+              <label for="edit-routine-schedule" class="form-label">Schedule</label>
+              <input type="text" class="form-control" id="edit-routine-schedule" placeholder="e.g. */5 * * * * or 1m" required>
+            </div>
+            <div class="mb-4">
+              <label for="edit-routine-action" class="form-label">Action / Script</label>
+              <textarea class="form-control" id="edit-routine-action" rows="4" required></textarea>
+            </div>
+            <div class="mb-3">
+              <label for="edit-routine-timeout" class="form-label">Timeout (seconds)</label>
+              <input type="number" class="form-control" id="edit-routine-timeout" min="10" required>
+            </div>
+            <div class="alert alert-danger fs-9 py-2 d-none" id="edit-routine-error" style="border-radius:8px;"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check2 me-1"></i>Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Clear / Reset Options -->
+  <div class="modal fade" id="clearOptionsModal" tabindex="-1" aria-labelledby="clearOptionsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="clearOptionsModalLabel">
+            <i class="bi bi-trash3 me-2" style="color:var(--rose)"></i>Clear Options
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body text-center py-4">
+          <p class="text-secondary mb-4" style="font-size:0.88rem;">Select the environments you wish to clear or reset:</p>
+          
+          <div class="d-flex flex-column gap-3 max-w-350 mx-auto">
+            <button class="btn btn-outline-primary d-flex align-items-center justify-content-start gap-3 py-3 px-4 text-start" id="btn-clear-chat-only" style="border-radius:12px;">
+              <i class="bi bi-chat-square-text-fill fs-4 text-indigo"></i>
+              <div>
+                <strong class="d-block text-primary">Clear Conversation</strong>
+                <span class="fs-9 text-muted d-block mt-0.5">Wipes the chat feed history. Keeps all workspace files.</span>
+              </div>
+            </button>
+
+            <button class="btn btn-outline-danger d-flex align-items-center justify-content-start gap-3 py-3 px-4 text-start" id="btn-clear-workspace-only" style="border-radius:12px;">
+              <i class="bi bi-folder-x fs-4 text-rose"></i>
+              <div>
+                <strong class="d-block text-rose">Clear Workspace Files</strong>
+                <span class="fs-9 text-muted d-block mt-0.5">Deletes all sandbox files. Keeps the chat history.</span>
+              </div>
+            </button>
+
+            <button class="btn btn-danger d-flex align-items-center justify-content-start gap-3 py-3 px-4 text-start" id="btn-clear-both" style="border-radius:12px;">
+              <i class="bi bi-trash-fill fs-4"></i>
+              <div>
+                <strong class="d-block text-white">Wipe Everything</strong>
+                <span class="fs-9 text-white-50 d-block mt-0.5">Deletes both chat history and workspace sandbox files.</span>
+              </div>
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer justify-content-center">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         </div>
       </div>
     </div>

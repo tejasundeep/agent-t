@@ -140,10 +140,12 @@ def calculate_next_run(schedule_str, last_run_or_now):
 # --- Scheduler Implementation ---
 
 class RoutinesScheduler:
-    def __init__(self, max_workers=4):
+    def __init__(self, max_workers=4, notification_callback=None):
         self.stop_event = threading.Event()
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.running_tasks = {} # routine_name -> future
+        # Optional callback: fn(title, message, level) — injected by app.py to emit SocketIO notifications
+        self.notification_callback = notification_callback
 
     def start(self):
         self.thread = threading.Thread(target=self._loop, name="RoutinesSchedulerLoop", daemon=True)
@@ -293,6 +295,25 @@ class RoutinesScheduler:
                 conn.commit()
         except Exception as e:
             print(f"[Routines Logger Error] Could not finalize log for '{name}': {e}", file=sys.stderr)
+
+        # Emit notification via injected callback (app.py wires this up)
+        if self.notification_callback:
+            try:
+                if status == "success":
+                    notif_title   = f"Routine '{name}' completed"
+                    notif_message = (output.strip()[:120] + "...") if len(output.strip()) > 120 else (output.strip() or "Execution finished successfully.")
+                    notif_level   = "success"
+                elif status == "timeout":
+                    notif_title   = f"Routine '{name}' timed out"
+                    notif_message = error.strip()[:120] if error else f"Exceeded timeout of {timeout}s."
+                    notif_level   = "warning"
+                else:  # failure
+                    notif_title   = f"Routine '{name}' failed"
+                    notif_message = (error.strip()[:120] + "...") if len(error.strip()) > 120 else (error.strip() or "An unknown error occurred.")
+                    notif_level   = "error"
+                self.notification_callback(notif_title, notif_message, notif_level)
+            except Exception as cb_err:
+                print(f"[Routines Notifier] Could not emit notification for '{name}': {cb_err}", file=sys.stderr)
 
 # --- CLI Implementation ---
 
