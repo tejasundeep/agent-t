@@ -687,13 +687,12 @@ body {
   color: hsl(220, 30%, 92%);
   font-size: 0.875rem;
   line-height: 1.65;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.25), 0 0 0 1px hsla(238,84%,67%,0.1) inset;
   word-break: break-word;
 }
 
 .theme-light .user-msg-bubble {
   background: linear-gradient(135deg, hsl(238, 70%, 95%), hsl(258, 65%, 94%));
-  border-color: hsla(238, 84%, 67%, 0.3);
+  border-color: hsla(238, 84%, 67%, 0.08);
   color: hsl(238, 40%, 20%);
 }
 
@@ -740,7 +739,6 @@ body {
   line-height: 1.75;
   backdrop-filter: var(--glass-blur);
   overflow: hidden;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -862,7 +860,6 @@ body {
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  cursor: pointer;
   user-select: none;
 }
 
