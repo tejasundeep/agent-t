@@ -1,60 +1,167 @@
+"""Agent execution module.
+
+Handles prompt processing, capability-based tool filtering, single-turn response
+template parsing, variable substitution, and output streaming.
+"""
 import json
-from llm import chat,stream
+import re
+import time
+from llm import chat, stream
 from registry import registry
 from context_engine import ContextEngine
+from capability_resolver import resolve_tools
+
+def parse_llm_json(text):
+    """Tries to find and parse a JSON block in the LLM response text."""
+    if not text:
+        return None
+    # 1. Try finding markdown code block
+    match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1).strip())
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+    # 2. Try parsing the whole text
+    try:
+        return json.loads(text.strip())
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    # 3. Try searching for anything between { and }
+    match_braces = re.search(r"({.*})", text, re.DOTALL)
+    if match_braces:
+        try:
+            return json.loads(match_braces.group(1).strip())
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+    return None
 
 class Agent:
-    def __init__(self,system=None):
-        self.messages=[{"role":"system","content":system}] if system else []
+    """Core Agent class containing standard execution loops and streaming hooks."""
+    def __init__(self, system=None):
+        self.messages = [{"role": "system", "content": system}] if system else []
         self.context_engine = ContextEngine()
 
-    def __call__(self,prompt):
+    def __call__(self, prompt):
         """Legacy call returning full response string (kept for compatibility)."""
-        self.messages.append({"role":"user","content":prompt})
+        self.messages.append({"role": "user", "content": prompt})
+
         while True:
             optimized_messages = self.context_engine.assemble_context(self.messages)
-            text,calls=stream(chat(optimized_messages,registry.schema))
+            # Dynamic capability resolution to minimize prompt payload
+            resolved_schema = resolve_tools(prompt, registry.schema)
+
+            text, calls = stream(chat(optimized_messages, resolved_schema))
+
+            # Check for JSON block in the text specifying single_turn template execution
+            parsed = parse_llm_json(text)
+            if parsed and parsed.get("mode") == "single_turn":
+                template = parsed.get("response_template", "")
+                json_calls = parsed.get("tool_calls", [])
+
+                variables = {}
+                for tc in json_calls:
+                    name = tc.get("name")
+                    args = tc.get("arguments", {})
+                    r = registry.run(name, args)
+                    variables[name] = r
+
+                # Dynamic Template injection
+                final_response = template
+                for name, val in variables.items():
+                    final_response = final_response.replace(f"{{{name}}}", str(val))
+
+                self.messages.append({"role": "assistant", "content": final_response})
+                self.context_engine.buffer_interaction(prompt, final_response)
+                return final_response
+
+            # Fallback to standard OpenAI-style tool execution (multi-turn logic)
             if not calls:
-                self.messages.append({"role":"assistant","content":text})
+                self.messages.append({"role": "assistant", "content": text})
                 self.context_engine.buffer_interaction(prompt, text)
                 return text
-            self.messages.append({"role":"assistant","tool_calls":[{"id":c["id"],"type":"function","function":{"name":c["name"],"arguments":c["args"]}} for c in calls]})
+
+            formatted_calls = [
+                {
+                    "id": c["id"],
+                    "type": "function",
+                    "function": {"name": c["name"], "arguments": c["args"]}
+                }
+                for c in calls
+            ]
+            self.messages.append({"role": "assistant", "tool_calls": formatted_calls})
+
             for c in calls:
-                try:
-                    r=registry.run(c["name"],json.loads(c["args"] or "{}"))
-                except Exception as e:
-                    r=f"Tool Error: {e}"
-                self.messages.append({"role":"tool","tool_call_id":c["id"],"content":str(r)})
+                r = registry.run(c["name"], json.loads(c["args"] or "{}"))
+                self.messages.append({"role": "tool", "tool_call_id": c["id"], "content": str(r)})
 
     def stream(self, prompt):
-        """Yield assistant response characters as they arrive.
-        The LLM client may return the full response in a single delta. To simulate
-        a live typing effect we emit each character individually with a short pause.
-        Tool calls are collected and processed after the entire text has been streamed.
+        """Yield assistant response characters.
+
+        Buffers single_turn templates to perform execution and injection before outputting,
+        while streaming multi_turn/direct chat instantly.
         """
-        import time
         self.messages.append({"role": "user", "content": prompt})
+
         while True:
-            full_text = ""
-            tool_calls = []
             optimized_messages = self.context_engine.assemble_context(self.messages)
-            full_text, tool_calls = stream(chat(optimized_messages, registry.schema))
-            # Stream the assistant's response character by character for a live typing effect
-            for char in full_text:
-                yield char
-                time.sleep(0.02)
-            # Append the full assistant response to the message list
-            self.messages.append({"role": "assistant", "content": full_text})
-            # If there are tool calls, process them after the response is fully streamed
-            if tool_calls:
-                self.messages[-1]["tool_calls"] = [{"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["args"]}} for c in tool_calls]
-                for c in tool_calls:
-                    try:
-                        r = registry.run(c["name"], json.loads(c["args"] or "{}"))
-                    except Exception as e:
-                        r = f"Tool Error: {e}"
-                    self.messages.append({"role": "tool", "tool_call_id": c["id"], "content": str(r)})
-            else:
-                self.context_engine.buffer_interaction(prompt, full_text)
+            resolved_schema = resolve_tools(prompt, registry.schema)
+
+            # Obtain response text and native tool calls in a single pass
+            full_text, tool_calls = stream(chat(optimized_messages, resolved_schema))
+
+            parsed = parse_llm_json(full_text)
+            if parsed and parsed.get("mode") == "single_turn":
+                # Single-turn template route: Buffer, execute, populate, then stream
+                template = parsed.get("response_template", "")
+                json_calls = parsed.get("tool_calls", [])
+
+                variables = {}
+                for tc in json_calls:
+                    name = tc.get("name")
+                    args = tc.get("arguments", {})
+                    r = registry.run(name, args)
+                    variables[name] = r
+
+                final_response = template
+                for name, val in variables.items():
+                    final_response = final_response.replace(f"{{{name}}}", str(val))
+
+                # Emit the final injected output character by character
+                for char in final_response:
+                    yield char
+                    time.sleep(0.01)
+
+                self.messages.append({"role": "assistant", "content": final_response})
+                self.context_engine.buffer_interaction(prompt, final_response)
                 break
 
+            # If not a single-turn template, treat as regular streaming or multi-turn execution
+            if tool_calls:
+                formatted_tc = [
+                    {
+                        "id": c["id"],
+                        "type": "function",
+                        "function": {"name": c["name"], "arguments": c["args"]}
+                    }
+                    for c in tool_calls
+                ]
+                self.messages.append({
+                    "role": "assistant",
+                    "content": full_text,
+                    "tool_calls": formatted_tc
+                })
+                for c in tool_calls:
+                    r = registry.run(c["name"], json.loads(c["args"] or "{}"))
+                    self.messages.append({
+                        "role": "tool", "tool_call_id": c["id"], "content": str(r)
+                    })
+                continue
+
+            # Direct chat response: stream characters immediately
+            for char in full_text:
+                yield char
+                time.sleep(0.01)
+            self.messages.append({"role": "assistant", "content": full_text})
+            self.context_engine.buffer_interaction(prompt, full_text)
+            break
