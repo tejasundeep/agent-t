@@ -380,9 +380,13 @@ document.addEventListener('DOMContentLoaded', () => {
   socket.on('step_log', () => {
     // suppress raw step logs – shown inline in the tool card header
   });
-
   socket.on('step_complete', data => {
     updateToolStepCard(data.id, data.status === 'success' ? 'success' : 'error');
+  });
+
+  socket.on('ask_user_prompt', data => {
+    const response = prompt(data.prompt);
+    socket.emit('ask_user_response', { response: response || '' });
   });
 
   socket.on('thought_chunk', data => {

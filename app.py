@@ -167,15 +167,41 @@ if registry:
                 'status': 'error'
             })
             raise e
-    
+
     registry.run = custom_run
 
 def run_actual_agent(sid, prompt):
     thread_name = threading.current_thread().name
     current_step_sid[thread_name] = sid
-    
+
+    # FIX Issue 6: bind this thread to the socket sid so scope is isolated per browser session
+    registry.register_thread_session(thread_name, sid)
+
+    # FIX Issue 2: removed dead 'callback' key — prompt delivery happens via socketio.emit below
+    registry.pending_inputs[thread_name] = {
+        "event": threading.Event(),
+        "prompt": None,
+        "response": None,
+        "ready": False,
+    }
+
     # Persist user message BEFORE running so build_llm_seed_messages includes it
     save_chat_event('user_msg', prompt)
+
+    # Watcher daemon: polls the pending_inputs entry and fires the socket event
+    # to the browser whenever ask_user() blocks the agent thread.
+    _stop_watcher = threading.Event()
+    def _prompt_watcher():
+        entry = registry.pending_inputs.get(thread_name)
+        while not _stop_watcher.is_set():
+            if entry and entry.get("ready") and entry.get("prompt"):
+                socketio.emit('ask_user_prompt', {'prompt': entry["prompt"]}, room=sid)
+                # Wait until the event is cleared (response received) before re-checking
+                entry["event"].wait(timeout=130)
+            _stop_watcher.wait(timeout=0.1)  # poll every 100ms
+
+    watcher = threading.Thread(target=_prompt_watcher, daemon=True, name=f"watcher_{thread_name}")
+    watcher.start()
 
     try:
         agent = Agent(SYSTEM_PROMPT)
@@ -212,9 +238,27 @@ def run_actual_agent(sid, prompt):
         time.sleep(0.5)
         simulate_runner_steps(sid, prompt)
     finally:
+        _stop_watcher.set()         # shut down the prompt watcher cleanly
         socketio.emit('agent_status', {'status': 'finished'}, room=sid)
         if thread_name in current_step_sid:
             del current_step_sid[thread_name]
+        if thread_name in registry.pending_inputs:
+            del registry.pending_inputs[thread_name]
+        # FIX Issue 6: clean up thread→session mapping after run completes
+        registry.unregister_thread_session(thread_name)
+
+@socketio.on('ask_user_response')
+def handle_ask_user_response(data):
+    sid = request.sid
+    response_text = data.get('response', '').strip()
+    # Find the thread registered to this socket session and unblock it
+    for thread_name, registered_sid in current_step_sid.items():
+        if registered_sid == sid:
+            # provide_input uses thread_name to look up pending_inputs entry
+            registry.provide_input(thread_name, response_text)
+            # Also emit prompt to front-end (needed because ask_user_prompt was emitted
+            # from request_input before the response; this is the completion side)
+            break
 
 def simulate_runner_steps(sid, prompt):
     prompt_lower = prompt.lower()
