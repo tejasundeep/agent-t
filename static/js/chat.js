@@ -1148,6 +1148,579 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ──────────────────────────────────────────
      INIT
   ────────────────────────────────────────── */
+  /* ──────────────────────────────────────────
+     PIPELINES ENGINE INTEGRATION
+  ────────────────────────────────────────── */
+  const btnOpenPipelines        = document.getElementById('btn-open-pipelines');
+  const mobBtnPipelines         = document.getElementById('mob-btn-pipelines');
+  const pipelinesOverlay        = document.getElementById('pipelines-overlay');
+  const pipelinesPanel          = document.getElementById('pipelines-panel');
+  const btnClosePipelines       = document.getElementById('btn-close-pipelines');
+  const pipelinesPanelBody      = document.getElementById('pipelines-panel-body');
+  const btnCreatePipelineTrigger = document.getElementById('btn-create-pipeline-trigger');
+
+  // Modals
+  const addPipelineModal        = new bootstrap.Modal(document.getElementById('addPipelineModal'));
+  const runPipelineModal        = new bootstrap.Modal(document.getElementById('runPipelineModal'));
+  const pipelineLogsModal       = new bootstrap.Modal(document.getElementById('pipelineLogsModal'));
+
+  // Form elements
+  const createPipelineForm      = document.getElementById('create-pipeline-form');
+  const pipelineTemplateSel     = document.getElementById('pipeline-template-selector');
+  const runPipelineForm         = document.getElementById('run-pipeline-form');
+  const btnCancelPipelineRun    = document.getElementById('btn-cancel-pipeline-run');
+
+  let pipelinesOpen             = false;
+  let activeLogRunId            = null;
+  let activeLogTimer            = null;
+
+  // Toggle slide-over panel
+  function openPipelines() {
+    pipelinesOverlay.classList.add('is-open');
+    pipelinesPanel.classList.add('is-open');
+    pipelinesOpen = true;
+    loadPipelinesPanel();
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closePipelines() {
+    pipelinesOverlay.classList.remove('is-open');
+    pipelinesPanel.classList.remove('is-open');
+    pipelinesOpen = false;
+    document.body.style.overflow = '';
+  }
+
+  if (btnOpenPipelines) btnOpenPipelines.addEventListener('click', openPipelines);
+  if (mobBtnPipelines) mobBtnPipelines.addEventListener('click', openPipelines);
+  if (btnClosePipelines) btnClosePipelines.addEventListener('click', closePipelines);
+  if (pipelinesOverlay) pipelinesOverlay.addEventListener('click', closePipelines);
+
+  // Esc key closure
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && pipelinesOpen) closePipelines();
+  });
+
+  // Template select options
+  const templates = {
+    code_compiler: {
+      variables: { file_name: "test_pipeline.py", run_args: "hello_engine" },
+      steps: [
+        {
+          id: "write_code",
+          name: "Write Sample Code",
+          type: "tool",
+          action: "write_to_file",
+          args: {
+            TargetFile: "{{variables.file_name}}",
+            Overwrite: true,
+            CodeContent: "import sys\nprint('Execution successful!')\nprint('Arguments:', sys.argv[1:])\nsys.exit(0)\n",
+            Description: "Create script file"
+          }
+        },
+        {
+          id: "run_code",
+          name: "Execute Code via Shell",
+          type: "shell",
+          action: "python {{variables.file_name}} {{variables.run_args}}",
+          depends_on: ["write_code"]
+        }
+      ]
+    },
+    parallel_runner: {
+      variables: { var_1: "Process A", var_2: "Process B" },
+      steps: [
+        {
+          id: "task_a",
+          name: "Launch Process A",
+          type: "shell",
+          action: "echo Parallel execution for {{variables.var_1}}"
+        },
+        {
+          id: "task_b",
+          name: "Launch Process B",
+          type: "shell",
+          action: "echo Parallel execution for {{variables.var_2}}"
+        },
+        {
+          id: "task_c",
+          name: "Merge Outputs",
+          type: "python",
+          action: "print('Merge complete.')\nprint('Task A output:', steps['task_a']['stdout'].strip())\nprint('Task B output:', steps['task_b']['stdout'].strip())\n",
+          depends_on: ["task_a", "task_b"]
+        }
+      ]
+    },
+    agent_analyzer: {
+      variables: { topic: "Cellular Respiration", report_name: "report.txt" },
+      steps: [
+        {
+          id: "agent_prompt",
+          name: "Prompt Agent for summary",
+          type: "prompt",
+          action: "Write a 3-bullet summary of {{variables.topic}}."
+        },
+        {
+          id: "save_summary",
+          name: "Write summary to file",
+          type: "tool",
+          action: "write_to_file",
+          args: {
+            TargetFile: "{{variables.report_name}}",
+            Overwrite: true,
+            CodeContent: "{{steps.agent_prompt.output}}",
+            Description: "Save agent response"
+          },
+          depends_on: ["agent_prompt"]
+        }
+      ]
+    }
+  };
+
+  if (pipelineTemplateSel) {
+    pipelineTemplateSel.addEventListener('change', () => {
+      const val = pipelineTemplateSel.value;
+      if (val && templates[val]) {
+        document.getElementById('pipeline-definition').value = JSON.stringify(templates[val], null, 2);
+      }
+    });
+  }
+
+  if (btnCreatePipelineTrigger) {
+    btnCreatePipelineTrigger.addEventListener('click', () => {
+      document.getElementById('pipeline-id').value = '';
+      document.getElementById('pipeline-id').disabled = false;
+      document.getElementById('pipeline-name').value = '';
+      document.getElementById('pipeline-description').value = '';
+      document.getElementById('pipeline-definition').value = '';
+      document.getElementById('pipeline-template-selector').value = '';
+      document.getElementById('pipeline-error-alert').classList.add('d-none');
+      addPipelineModal.show();
+    });
+  }
+
+  // Create/Edit pipeline form submission
+  if (createPipelineForm) {
+    createPipelineForm.addEventListener('submit', e => {
+      e.preventDefault();
+      const pipeline_id = document.getElementById('pipeline-id').value.trim();
+      const name = document.getElementById('pipeline-name').value.trim();
+      const description = document.getElementById('pipeline-description').value.trim();
+      const definition_text = document.getElementById('pipeline-definition').value.trim();
+      const error_alert = document.getElementById('pipeline-error-alert');
+
+      let definition;
+      try {
+        definition = JSON.parse(definition_text);
+      } catch (err) {
+        error_alert.textContent = `Invalid JSON: ${err.message}`;
+        error_alert.classList.remove('d-none');
+        return;
+      }
+
+      fetch('/api/pipelines', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: pipeline_id, name, description, definition })
+      })
+      .then(r => r.json())
+      .then(res => {
+        if (res.status === 'success') {
+          addPipelineModal.hide();
+          loadPipelinesPanel();
+          showToast(res.message, 'success');
+        } else {
+          error_alert.textContent = res.message;
+          error_alert.classList.remove('d-none');
+        }
+      })
+      .catch(err => {
+        error_alert.textContent = `Server error: ${err.message}`;
+        error_alert.classList.remove('d-none');
+      });
+    });
+  }
+
+  // Load and render configured pipelines
+  function loadPipelinesPanel() {
+    pipelinesPanelBody.innerHTML = `
+      <div class="text-center py-5" style="color:var(--text-muted);font-size:0.8rem;">
+        <div class="spinner-border spinner-border-sm text-secondary me-2" role="status"></div>
+        Fetching pipelines...
+      </div>
+    `;
+    fetch('/api/pipelines')
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'success') {
+          renderPipelinesPanel(data.pipelines);
+        } else {
+          pipelinesPanelBody.innerHTML = `<div style="color:var(--rose);padding:20px;">Error: ${data.message}</div>`;
+        }
+      })
+      .catch(() => {
+        pipelinesPanelBody.innerHTML = `<div style="color:var(--rose);padding:20px;">Failed to fetch pipelines.</div>`;
+      });
+  }
+
+  function renderPipelinesPanel(pipelines) {
+    if (!pipelines || pipelines.length === 0) {
+      pipelinesPanelBody.innerHTML = `
+        <div class="scheduler-empty">
+          <i class="bi bi-diagram-3"></i>
+          <p>No pipelines configured yet.<br>Create a new DAG pipeline to start.</p>
+        </div>
+      `;
+      return;
+    }
+
+    pipelinesPanelBody.innerHTML = '';
+    
+    // Header for runs history
+    const sectionTitle = document.createElement('div');
+    sectionTitle.style.cssText = 'font-weight:600;font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);margin:10px 0 16px 4px;';
+    sectionTitle.textContent = 'Configured Pipelines';
+    pipelinesPanelBody.appendChild(sectionTitle);
+
+    pipelines.forEach((p, i) => {
+      const card = document.createElement('div');
+      card.className = 'routine-card';
+      card.style.animationDelay = `${i * 0.04}s`;
+      
+      const stepsCount = p.definition.steps ? p.definition.steps.length : 0;
+      const desc = p.description || 'No description';
+
+      card.innerHTML = `
+        <div class="routine-card-top">
+          <div class="routine-card-name" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</div>
+          <span class="routine-status-pill active">${p.id}</span>
+        </div>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin:6px 0 12px 0;">${escapeHTML(desc)}</p>
+        <div class="routine-meta" style="margin-bottom:12px;">
+          <div class="routine-meta-row">
+            <i class="bi bi-diagram-3"></i>
+            <span>Steps: <span class="val">${stepsCount} DAG nodes</span></span>
+          </div>
+        </div>
+        <div class="routine-actions">
+          <button class="btn-routine btn-trigger" data-action="run" data-id="${p.id}">
+            <i class="bi bi-play-fill"></i> Run
+          </button>
+          <button class="btn-routine" data-action="edit" data-id="${p.id}">
+            <i class="bi bi-pencil"></i> Edit
+          </button>
+          <button class="btn-routine btn-delete" data-action="delete" data-id="${p.id}">
+            <i class="bi bi-trash"></i> Delete
+          </button>
+        </div>
+      `;
+      
+      // Bind actions
+      card.querySelector('[data-action="run"]').addEventListener('click', () => triggerRunInputs(p));
+      card.querySelector('[data-action="edit"]').addEventListener('click', () => triggerEditPipeline(p));
+      card.querySelector('[data-action="delete"]').addEventListener('click', () => deletePipeline(p.id));
+      
+      pipelinesPanelBody.appendChild(card);
+    });
+
+    // History run title
+    const histTitle = document.createElement('div');
+    histTitle.style.cssText = 'font-weight:600;font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);margin:32px 0 16px 4px;';
+    histTitle.textContent = 'Execution History';
+    pipelinesPanelBody.appendChild(histTitle);
+
+    const runsContainer = document.createElement('div');
+    runsContainer.id = 'pipelines-history-runs-list';
+    pipelinesPanelBody.appendChild(runsContainer);
+
+    loadPipelinesHistory();
+  }
+
+  function triggerEditPipeline(p) {
+    document.getElementById('pipeline-id').value = p.id;
+    document.getElementById('pipeline-id').disabled = true;
+    document.getElementById('pipeline-name').value = p.name;
+    document.getElementById('pipeline-description').value = p.description || '';
+    document.getElementById('pipeline-definition').value = JSON.stringify(p.definition, null, 2);
+    document.getElementById('pipeline-template-selector').value = '';
+    document.getElementById('pipeline-error-alert').classList.add('d-none');
+    addPipelineModal.show();
+  }
+
+  function deletePipeline(id) {
+    if (!confirm(`Delete pipeline '${id}'? This cannot be undone.`)) return;
+    fetch(`/api/pipelines/${id}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(res => {
+        loadPipelinesPanel();
+        showToast(res.message, 'success');
+      });
+  }
+
+  // Pre-fill variable form input fields
+  function triggerRunInputs(p) {
+    const container = document.getElementById('pipeline-inputs-container');
+    container.innerHTML = '';
+    
+    document.getElementById('run-pipeline-id').value = p.id;
+    const def_variables = p.definition.variables || {};
+    const keys = Object.keys(def_variables);
+    
+    if (keys.length === 0) {
+      container.innerHTML = `<div class="text-secondary fs-9">This pipeline requires no input variables. Click Start below.</div>`;
+    } else {
+      keys.forEach(key => {
+        const div = document.createElement('div');
+        div.innerHTML = `
+          <label class="form-label">${escapeHTML(key)}</label>
+          <input type="text" class="form-control" name="var-${escapeHTML(key)}" value="${escapeHTML(String(def_variables[key]))}">
+        `;
+        container.appendChild(div);
+      });
+    }
+    runPipelineModal.show();
+  }
+
+  // Run execution triggered
+  if (runPipelineForm) {
+    runPipelineForm.addEventListener('submit', e => {
+      e.preventDefault();
+      const id = document.getElementById('run-pipeline-id').value;
+      const container = document.getElementById('pipeline-inputs-container');
+      const inputs = {};
+      
+      container.querySelectorAll('input').forEach(inp => {
+        const name = inp.name.replace(/^var-/, '');
+        inputs[name] = inp.value;
+      });
+
+      fetch(`/api/pipelines/${id}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs })
+      })
+      .then(r => r.json())
+      .then(res => {
+        if (res.status === 'success') {
+          runPipelineModal.hide();
+          loadPipelinesPanel();
+          showToast(res.message, 'success');
+          // Open log streaming modal instantly for active run logs
+          openPipelineLogs(res.run_id);
+        } else {
+          alert(`Error: ${res.message}`);
+        }
+      });
+    });
+  }
+
+  // Load runs execution history
+  function loadPipelinesHistory() {
+    const list = document.getElementById('pipelines-history-runs-list');
+    if (!list) return;
+
+    list.innerHTML = `<div class="text-muted fs-9 py-2 text-center">Loading run logs...</div>`;
+    fetch('/api/pipelines/runs')
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'success' && list) {
+          if (data.runs.length === 0) {
+            list.innerHTML = `<div class="text-muted fs-9 py-3 text-center">No runs recorded.</div>`;
+            return;
+          }
+          list.innerHTML = '';
+          data.runs.forEach(run => {
+            const card = document.createElement('div');
+            card.style.cssText = 'background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;cursor:pointer;transition:all 0.15s ease;';
+            card.addEventListener('mouseenter', () => card.style.borderColor = 'var(--border-hover)');
+            card.addEventListener('mouseleave', () => card.style.borderColor = 'var(--border)');
+            card.addEventListener('click', () => openPipelineLogs(run.id));
+
+            const triggerTime = run.triggered_at.slice(11, 19);
+            const statusClass = run.status === 'completed' ? 'text-success' : (run.status === 'failed' ? 'text-danger' : 'text-warning');
+            
+            card.innerHTML = `
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span style="font-weight:600;font-size:0.8rem;color:var(--text-primary)">Run #${run.id} — ${escapeHTML(run.pipeline_name)}</span>
+                <span style="font-size:0.75rem;font-weight:600;" class="${statusClass}">${run.status}</span>
+              </div>
+              <div class="d-flex justify-content-between fs-9 text-muted">
+                <span>Triggered at: ${triggerTime}</span>
+                <span>ID: ${run.pipeline_id}</span>
+              </div>
+            `;
+            list.appendChild(card);
+          });
+        }
+      });
+  }
+
+  // Open Log modal and stream details
+  function openPipelineLogs(runId) {
+    activeLogRunId = runId;
+    document.getElementById('pipeline-log-run-id').textContent = runId;
+    document.getElementById('pipeline-run-terminal-body').innerHTML = '<div class="text-muted">Initiating trace log outputs...</div>';
+    document.getElementById('pipeline-run-steps-list').innerHTML = '';
+    
+    // Retrieve run stats
+    refreshPipelineLogs();
+    
+    // Poll logs details while running
+    if (activeLogTimer) clearInterval(activeLogTimer);
+    activeLogTimer = setInterval(refreshPipelineLogs, 2500);
+
+    pipelineLogsModal.show();
+  }
+
+  function refreshPipelineLogs() {
+    if (!activeLogRunId) return;
+
+    fetch(`/api/pipelines/runs/${activeLogRunId}/logs`)
+      .then(r => r.json())
+      .then(res => {
+        if (res.status === 'success' && activeLogRunId === res.run.id) {
+          const run = res.run;
+          const logs = res.logs;
+
+          // Update Run status badge
+          const badge = document.getElementById('pipeline-run-status-badge');
+          badge.textContent = run.status;
+          badge.className = 'badge';
+          if (run.status === 'completed') badge.classList.add('bg-success');
+          else if (run.status === 'failed') badge.classList.add('bg-danger');
+          else if (run.status === 'canceled') badge.classList.add('bg-secondary');
+          else badge.classList.add('bg-warning', 'text-dark');
+
+          // Toggle cancel button
+          const cancelBtn = document.getElementById('btn-cancel-pipeline-run');
+          if (run.status === 'running') cancelBtn.removeAttribute('disabled');
+          else cancelBtn.setAttribute('disabled', 'true');
+
+          // Render step checklist DAG list
+          const list = document.getElementById('pipeline-run-steps-list');
+          list.innerHTML = '';
+          logs.forEach(l => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;background:var(--bg-elevated);border:1px solid var(--border);padding:8px 12px;border-radius:8px;font-size:0.75rem;';
+            
+            let statusIcon = '<i class="bi bi-circle text-muted"></i>';
+            if (l.status === 'running') statusIcon = '<div class="spinner-border spinner-border-sm text-warning" role="status" style="width:12px;height:12px;"></div>';
+            else if (l.status === 'success') statusIcon = '<i class="bi bi-check-circle-fill text-success"></i>';
+            else if (l.status === 'failed') statusIcon = '<i class="bi bi-x-circle-fill text-danger"></i>';
+            else if (l.status === 'skipped') statusIcon = '<i class="bi bi-arrow-right-circle text-secondary"></i>';
+
+            row.innerHTML = `
+              <div class="d-flex align-items-center gap-2">
+                ${statusIcon}
+                <span style="font-weight:500;" class="text-primary">${escapeHTML(l.step_name)}</span>
+              </div>
+              <span class="text-muted fs-10" style="font-family:monospace;">${escapeHTML(l.step_id)}</span>
+            `;
+            list.appendChild(row);
+          });
+
+          // Compile all step outputs into console log view
+          const term = document.getElementById('pipeline-run-terminal-body');
+          term.innerHTML = '';
+
+          // Input block
+          const inpBlock = document.createElement('div');
+          inpBlock.style.color = 'var(--indigo-light)';
+          inpBlock.innerHTML = `[Pipeline Inputs Context]:<br>${escapeHTML(JSON.stringify(run.inputs, null, 2))}<br><br>`;
+          term.appendChild(inpBlock);
+
+          logs.forEach(l => {
+            const div = document.createElement('div');
+            div.style.marginBottom = '20px';
+            
+            const headClass = l.status === 'success' ? 'text-success' : (l.status === 'failed' ? 'text-danger' : 'text-warning');
+            div.innerHTML = `
+              <span class="${headClass}" style="font-weight:bold;">❯ Step: ${escapeHTML(l.step_id)} (${escapeHTML(l.step_name)}) [${l.status.toUpperCase()}]</span><br>
+              <span class="text-muted" style="font-size:10px;">Started: ${l.started_at.slice(11, 19)} | Finished: ${l.finished_at ? l.finished_at.slice(11,19) : 'active'}</span><br>
+            `;
+            
+            if (l.output) {
+              const out = document.createElement('pre');
+              out.style.cssText = 'background:rgba(0,0,0,0.2);padding:10px;border-radius:6px;border:1px solid var(--border);margin-top:6px;overflow-x:auto;white-space:pre-wrap;';
+              out.textContent = l.output;
+              div.appendChild(out);
+            }
+            if (l.error) {
+              const err = document.createElement('pre');
+              err.style.cssText = 'background:rgba(220,53,69,0.06);color:var(--rose);padding:10px;border-radius:6px;border:1px solid rgba(220,53,69,0.2);margin-top:6px;overflow-x:auto;white-space:pre-wrap;';
+              err.textContent = l.error;
+              div.appendChild(err);
+            }
+            term.appendChild(div);
+          });
+
+          // Overall pipeline run errors
+          if (run.error) {
+            const errBlock = document.createElement('div');
+            errBlock.style.cssText = 'background:rgba(220,53,69,0.08);color:var(--rose);padding:12px;border-radius:8px;border:1px solid rgba(220,53,69,0.3);margin-top:20px;';
+            errBlock.innerHTML = `<strong>Pipeline Execution Error:</strong><br>${escapeHTML(run.error)}`;
+            term.appendChild(errBlock);
+          }
+
+          // If run has finished, clear active polling timer
+          if (run.status !== 'running' && run.status !== 'pending') {
+            if (activeLogTimer) {
+              clearInterval(activeLogTimer);
+              activeLogTimer = null;
+            }
+          }
+        }
+      });
+  }
+
+  // Cancel executing pipeline run
+  if (btnCancelPipelineRun) {
+    btnCancelPipelineRun.addEventListener('click', () => {
+      if (!activeLogRunId || !confirm('Abort this pipeline execution run?')) return;
+      fetch(`/api/pipelines/runs/${activeLogRunId}/cancel`, { method: 'POST' })
+        .then(r => r.json())
+        .then(res => {
+          showToast(res.message, 'info');
+          refreshPipelineLogs();
+        });
+    });
+  }
+
+  // Cancel timers on modal hide
+  document.getElementById('pipelineLogsModal').addEventListener('hidden.bs.modal', () => {
+    activeLogRunId = null;
+    if (activeLogTimer) {
+      clearInterval(activeLogTimer);
+      activeLogTimer = null;
+    }
+  });
+
+  // Socket IO streaming integration
+  socket.on('pipeline_step_log', data => {
+    if (activeLogRunId === data.run_id) {
+      refreshPipelineLogs();
+    }
+  });
+
+  socket.on('pipeline_step_status', data => {
+    if (activeLogRunId === data.run_id) {
+      refreshPipelineLogs();
+    }
+  });
+
+  socket.on('pipeline_status', data => {
+    if (activeLogRunId === data.run_id) {
+      refreshPipelineLogs();
+    }
+    loadPipelinesHistory();
+  });
+
+  socket.on('pipeline_complete', data => {
+    if (activeLogRunId === data.run_id) {
+      refreshPipelineLogs();
+    }
+    loadPipelinesHistory();
+  });
+
   promptInput.focus();
 
 }); // DOMContentLoaded

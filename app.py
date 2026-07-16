@@ -642,5 +642,214 @@ def api_clear_notifications():
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
 
+# ── Pipeline Engine REST API ──────────────────────────────────────────────────
+
+@app.route('/api/pipelines', methods=['GET'])
+def api_list_pipelines():
+    init_db()
+    try:
+        with get_db_connection() as conn:
+            rows = conn.execute("SELECT * FROM pipelines ORDER BY id ASC").fetchall()
+            pipelines = []
+            for r in rows:
+                pipelines.append({
+                    "id": r["id"],
+                    "name": r["name"],
+                    "description": r["description"],
+                    "definition": json.loads(r["definition"]),
+                    "created_at": r["created_at"]
+                })
+            return {"status": "success", "pipelines": pipelines}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+@app.route('/api/pipelines', methods=['POST'])
+def api_create_pipeline():
+    init_db()
+    data = request.json or {}
+    pipeline_id = data.get("id", "").strip()
+    name = data.get("name", "").strip()
+    description = data.get("description", "").strip()
+    definition = data.get("definition")
+    
+    if not pipeline_id or not name or not definition:
+        return {"status": "error", "message": "Missing required fields: id, name, definition."}, 400
+        
+    try:
+        # Validate structure
+        if isinstance(definition, str):
+            definition = json.loads(definition)
+        if 'steps' not in definition:
+            return {"status": "error", "message": "definition must contain 'steps' list."}, 400
+        for step in definition['steps']:
+            if 'id' not in step or 'name' not in step or 'type' not in step:
+                return {"status": "error", "message": "Each step must contain 'id', 'name', and 'type'."}, 400
+            if step['type'] not in ('tool', 'python', 'shell', 'prompt'):
+                return {"status": "error", "message": f"Step type '{step['type']}' is invalid. Supported: tool, python, shell, prompt."}, 400
+    except Exception as e:
+        return {"status": "error", "message": f"Invalid JSON definition: {e}"}, 400
+
+    now = datetime.datetime.now()
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.execute("SELECT id FROM pipelines WHERE id = ?", (pipeline_id,))
+            exists = cursor.fetchone()
+            if exists:
+                conn.execute(
+                    "UPDATE pipelines SET name = ?, description = ?, definition = ? WHERE id = ?",
+                    (name, description, json.dumps(definition), pipeline_id)
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO pipelines (id, name, description, definition, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (pipeline_id, name, description, json.dumps(definition), now.isoformat())
+                )
+            conn.commit()
+        return {"status": "success", "message": f"Pipeline '{pipeline_id}' saved successfully."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+@app.route('/api/pipelines/<string:id>', methods=['DELETE'])
+def api_delete_pipeline(id):
+    init_db()
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.execute("DELETE FROM pipelines WHERE id = ?", (id,))
+            conn.commit()
+            if cursor.rowcount > 0:
+                return {"status": "success", "message": f"Deleted pipeline '{id}'."}
+            else:
+                return {"status": "error", "message": f"Pipeline '{id}' not found."}, 404
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+@app.route('/api/pipelines/<string:id>/run', methods=['POST'])
+def api_run_pipeline(id):
+    init_db()
+    data = request.json or {}
+    inputs = data.get("inputs", {})
+    try:
+        from pipeline_engine import PipelineEngine
+        
+        def socketio_emitter(event, payload):
+            try:
+                socketio.emit(event, payload)
+                if event == 'pipeline_complete':
+                    push_notification(
+                        title=f"Pipeline Run #{payload['run_id']} finished",
+                        message=f"Status: {payload['status']}",
+                        level='info' if payload['status'] == 'completed' else 'error'
+                    )
+            except Exception:
+                pass
+                
+        engine = PipelineEngine(socketio_emitter=socketio_emitter)
+        run_id = engine.run(id, inputs)
+        return {"status": "success", "run_id": run_id, "message": f"Pipeline run #{run_id} started."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+@app.route('/api/pipelines/runs', methods=['GET'])
+def api_pipeline_runs():
+    init_db()
+    limit = request.args.get('limit', 50, type=int)
+    try:
+        with get_db_connection() as conn:
+            rows = conn.execute(
+                "SELECT r.*, p.name as pipeline_name FROM pipeline_runs r "
+                "JOIN pipelines p ON r.pipeline_id = p.id "
+                "ORDER BY r.triggered_at DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+            
+            runs = []
+            for r in rows:
+                runs.append({
+                    "id": r["id"],
+                    "pipeline_id": r["pipeline_id"],
+                    "pipeline_name": r["pipeline_name"],
+                    "status": r["status"],
+                    "inputs": json.loads(r["inputs"]),
+                    "outputs": json.loads(r["outputs"]) if r["outputs"] else None,
+                    "triggered_at": r["triggered_at"],
+                    "finished_at": r["finished_at"],
+                    "error": r["error"]
+                })
+            return {"status": "success", "runs": runs}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+@app.route('/api/pipelines/runs/<int:run_id>/logs', methods=['GET'])
+def api_pipeline_run_logs(run_id):
+    init_db()
+    try:
+        with get_db_connection() as conn:
+            run = conn.execute(
+                "SELECT r.*, p.name as pipeline_name FROM pipeline_runs r "
+                "JOIN pipelines p ON r.pipeline_id = p.id "
+                "WHERE r.id = ?", (run_id,)
+            ).fetchone()
+            
+            if not run:
+                return {"status": "error", "message": f"Pipeline run #{run_id} not found."}, 404
+                
+            log_rows = conn.execute(
+                "SELECT * FROM pipeline_run_logs WHERE run_id = ? ORDER BY id ASC",
+                (run_id,)
+            ).fetchall()
+            
+            logs = []
+            for l in log_rows:
+                logs.append({
+                    "id": l["id"],
+                    "step_id": l["step_id"],
+                    "step_name": l["step_name"],
+                    "status": l["status"],
+                    "started_at": l["started_at"],
+                    "finished_at": l["finished_at"],
+                    "output": l["output"],
+                    "error": l["error"]
+                })
+                
+            return {
+                "status": "success",
+                "run": {
+                    "id": run["id"],
+                    "pipeline_id": run["pipeline_id"],
+                    "pipeline_name": run["pipeline_name"],
+                    "status": run["status"],
+                    "inputs": json.loads(run["inputs"]),
+                    "outputs": json.loads(run["outputs"]) if run["outputs"] else None,
+                    "triggered_at": run["triggered_at"],
+                    "finished_at": run["finished_at"],
+                    "error": run["error"]
+                },
+                "logs": logs
+            }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+@app.route('/api/pipelines/runs/<int:run_id>/cancel', methods=['POST'])
+def api_cancel_pipeline_run(run_id):
+    try:
+        from pipeline_engine import cancel_pipeline_run
+        success = cancel_pipeline_run(run_id)
+        
+        # Always update DB status
+        init_db()
+        with get_db_connection() as conn:
+            cursor = conn.execute("SELECT status FROM pipeline_runs WHERE id = ?", (run_id,))
+            row = cursor.fetchone()
+            if row and row['status'] == 'running':
+                conn.execute(
+                    "UPDATE pipeline_runs SET status = 'canceled', finished_at = ?, error = 'Canceled by user' WHERE id = ?",
+                    (datetime.datetime.now().isoformat(), run_id)
+                )
+                conn.commit()
+                
+        return {"status": "success", "message": f"Cancel signal sent for run #{run_id}."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
 if __name__ == '__main__':
     socketio.run(app, host='127.0.0.1', port=5000, debug=True, use_reloader=False, log_output=True, allow_unsafe_werkzeug=True)

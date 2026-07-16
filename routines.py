@@ -46,8 +46,46 @@ def init_db():
                 FOREIGN KEY (routine_name) REFERENCES routines(name) ON DELETE CASCADE
             );
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pipelines (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                definition TEXT NOT NULL, -- JSON definition of variables and steps
+                created_at TIMESTAMP NOT NULL
+            );
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pipeline_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pipeline_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                inputs TEXT NOT NULL, -- JSON input variables
+                outputs TEXT, -- JSON variables/step outputs after execution
+                triggered_at TIMESTAMP NOT NULL,
+                finished_at TIMESTAMP,
+                error TEXT,
+                FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
+            );
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pipeline_run_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                step_id TEXT NOT NULL,
+                step_name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                started_at TIMESTAMP NOT NULL,
+                finished_at TIMESTAMP,
+                output TEXT,
+                error TEXT,
+                FOREIGN KEY (run_id) REFERENCES pipeline_runs(id) ON DELETE CASCADE
+            );
+        """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_routines_status_next_run ON routines(status, next_run);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_routine_logs_name_triggered ON routine_logs(routine_name, triggered_at);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pid_status ON pipeline_runs(pipeline_id, status);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pipeline_run_logs_run_id ON pipeline_run_logs(run_id);")
         conn.commit()
 
 # --- Lightweight Cron & Interval Parser ---
