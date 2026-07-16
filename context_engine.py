@@ -345,12 +345,19 @@ Response MUST be valid JSON matching this schema:
 
         if len(matched_nodes) == 1:
             n = matched_nodes[0]
+            summary = n.get("summary") or {}
+            if not isinstance(summary, dict):
+                summary = {}
+            decisions = summary.get("decisions_made") or []
+            state = summary.get("current_state") or "Initial"
+            pending = summary.get("pending_items") or []
+            references = summary.get("key_technical_references") or []
             return (
                 f"### Active Context: {n['topic']}\n"
-                f"Decisions: {', '.join(n['summary']['decisions_made']) or 'None'}\n"
-                f"State: {n['summary']['current_state'] or 'Initial'}\n"
-                f"Pending: {', '.join(n['summary']['pending_items']) or 'None'}\n"
-                f"References: {', '.join(n['summary']['key_technical_references']) or 'None'}\n"
+                f"Decisions: {', '.join(decisions) or 'None'}\n"
+                f"State: {state}\n"
+                f"Pending: {', '.join(pending) or 'None'}\n"
+                f"References: {', '.join(references) or 'None'}\n"
             )
 
         topics = [n["topic"] for n in matched_nodes]
@@ -360,10 +367,13 @@ Response MUST be valid JSON matching this schema:
         states = []
 
         for n in matched_nodes:
-            decisions.update(n["summary"].get("decisions_made", []) or [])
-            pending.update(n["summary"].get("pending_items", []) or [])
-            references.update(n["summary"].get("key_technical_references", []) or [])
-            states.append(f"[{n['topic']}]: {n['summary'].get('current_state', '')}")
+            summary = n.get("summary") or {}
+            if not isinstance(summary, dict):
+                summary = {}
+            decisions.update(summary.get("decisions_made", []) or [])
+            pending.update(summary.get("pending_items", []) or [])
+            references.update(summary.get("key_technical_references", []) or [])
+            states.append(f"[{n['topic']}]: {summary.get('current_state', '')}")
 
         combined_states = " | ".join(states)
 

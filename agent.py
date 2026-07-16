@@ -9,7 +9,6 @@ import time
 from llm import chat, stream
 from registry import registry
 from context_engine import ContextEngine
-from capability_resolver import resolve_tools
 
 def parse_llm_json(text):
     """Tries to find and parse a JSON block in the LLM response text."""
@@ -48,8 +47,8 @@ class Agent:
 
         while True:
             optimized_messages = self.context_engine.assemble_context(self.messages)
-            # Dynamic capability resolution to minimize prompt payload
-            resolved_schema = resolve_tools(prompt, registry.schema)
+            # Pass all tools to LLM
+            resolved_schema = registry.schema
 
             text, calls = stream(chat(optimized_messages, resolved_schema))
 
@@ -105,7 +104,8 @@ class Agent:
 
         while True:
             optimized_messages = self.context_engine.assemble_context(self.messages)
-            resolved_schema = resolve_tools(prompt, registry.schema)
+            # Pass all tools to LLM
+            resolved_schema = registry.schema
 
             # Obtain response text and native tool calls in a single pass
             full_text, tool_calls = stream(chat(optimized_messages, resolved_schema))

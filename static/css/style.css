@@ -832,7 +832,8 @@ body {
 
 .tool-step-card.status-success {
   background: hsla(152, 76%, 50%, 0.04);
-  border-color: hsla(152, 76%, 50%, 0.2);
+  border: 1px;
+  border-color: hsla(152, 76%, 50%, 0.08);
   box-shadow: 0 0 0 1px hsla(152, 76%, 50%, 0.08) inset;
 }
 .tool-step-card.status-error {
