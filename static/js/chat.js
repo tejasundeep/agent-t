@@ -131,14 +131,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (connected) {
       if (statusOrb) { statusOrb.classList.add('online'); statusOrb.classList.remove('offline'); }
       if (mobStatusOrb) { mobStatusOrb.classList.add('online'); mobStatusOrb.classList.remove('offline'); }
-      topbarOrb.style.background  = 'var(--emerald)';
-      topbarOrb.style.boxShadow   = '0 0 8px var(--emerald-glow)';
+      if (topbarOrb) {
+        topbarOrb.style.background  = 'var(--emerald)';
+        topbarOrb.style.boxShadow   = '0 0 8px var(--emerald-glow)';
+      }
       if (connectionIndicator) connectionIndicator.setAttribute('data-tip', 'Connected');
     } else {
       if (statusOrb) { statusOrb.classList.remove('online'); statusOrb.classList.add('offline'); }
       if (mobStatusOrb) { mobStatusOrb.classList.remove('online'); mobStatusOrb.classList.add('offline'); }
-      topbarOrb.style.background  = 'var(--rose)';
-      topbarOrb.style.boxShadow   = '0 0 8px var(--rose-glow)';
+      if (topbarOrb) {
+        topbarOrb.style.background  = 'var(--rose)';
+        topbarOrb.style.boxShadow   = '0 0 8px var(--rose-glow)';
+      }
       if (connectionIndicator) connectionIndicator.setAttribute('data-tip', 'Disconnected');
     }
   }
@@ -161,26 +165,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (finishTimeout) { clearTimeout(finishTimeout); finishTimeout = null; }
 
     if (running) {
-      btnSubmit.disabled   = true;
-      promptInput.disabled = true;
-      commandSpinner.style.display = 'flex';
-      btnSubmit.classList.add('is-running');
-      btnSendIcon.className = 'bi bi-stop-fill';
-      topbarStatusText.textContent = 'Processing...';
-      topbarOrb.style.animation = 'orbPulse 1s ease-in-out infinite';
+      if (btnSubmit) btnSubmit.disabled   = true;
+      if (promptInput) promptInput.disabled = true;
+      if (commandSpinner) commandSpinner.style.display = 'flex';
+      if (btnSubmit) btnSubmit.classList.add('is-running');
+      if (btnSendIcon) btnSendIcon.className = 'bi bi-stop-fill';
+      if (topbarStatusText) topbarStatusText.textContent = 'Processing...';
+      if (topbarOrb) topbarOrb.style.animation = 'orbPulse 1s ease-in-out infinite';
     } else {
-      btnSubmit.disabled   = false;
-      promptInput.disabled = false;
-      commandSpinner.style.display = 'none';
-      btnSubmit.classList.remove('is-running');
-      btnSendIcon.className = 'bi bi-arrow-up';
-      topbarStatusText.textContent = 'Ready';
-      topbarOrb.style.animation = 'none';  // 'none' fully kills inline animation
-      topbarOrb.style.removeProperty('animation');  // then remove so CSS class can take over
+      if (btnSubmit) btnSubmit.disabled   = false;
+      if (promptInput) promptInput.disabled = false;
+      if (commandSpinner) commandSpinner.style.display = 'none';
+      if (btnSubmit) btnSubmit.classList.remove('is-running');
+      if (btnSendIcon) btnSendIcon.className = 'bi bi-arrow-up';
+      if (topbarStatusText) topbarStatusText.textContent = 'Ready';
+      if (topbarOrb) {
+        topbarOrb.style.animation = 'none';  // 'none' fully kills inline animation
+        topbarOrb.style.removeProperty('animation');  // then remove so CSS class can take over
+      }
       currentResponseBlock = null;
       currentResponseText  = '';
       removeNeuralThinking();
-      promptInput.focus();
+      if (promptInput) promptInput.focus();
     }
   }
 
