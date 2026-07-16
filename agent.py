@@ -8,6 +8,7 @@ import re
 import time
 from llm import chat, stream
 from registry import registry
+from tool_retriever import retriever
 from context_engine import ContextEngine
 
 def parse_llm_json(text):
@@ -47,8 +48,8 @@ class Agent:
 
         while True:
             optimized_messages = self.context_engine.assemble_context(self.messages)
-            # Pass all tools to LLM
-            resolved_schema = registry.schema
+            # Retrieve only the top-K most relevant tools for this query
+            resolved_schema = retriever.retrieve(prompt, registry.schema)
 
             text, calls = stream(chat(optimized_messages, resolved_schema))
 
@@ -104,8 +105,8 @@ class Agent:
 
         while True:
             optimized_messages = self.context_engine.assemble_context(self.messages)
-            # Pass all tools to LLM
-            resolved_schema = registry.schema
+            # Retrieve only the top-K most relevant tools for this query
+            resolved_schema = retriever.retrieve(prompt, registry.schema)
 
             # Obtain response text and native tool calls in a single pass
             full_text, tool_calls = stream(chat(optimized_messages, resolved_schema))

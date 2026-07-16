@@ -145,6 +145,16 @@ class Registry:
             },
         })
         self.tools[f.__name__] = f
+        # Notify retriever so the new/updated tool gets indexed immediately
+        try:
+            from tool_retriever import retriever as _retriever
+            _retriever.index_tool(
+                f.__name__,
+                inspect.getdoc(f) or "",
+                self.schema[-1],
+            )
+        except Exception:  # retriever not available yet on cold boot — reindex_all handles it
+            pass
         return f
 
     # ── Serialization & execution ─────────────────────────────────────────────
@@ -191,6 +201,12 @@ class Registry:
             if is_pkg:
                 continue
             importlib.import_module(f"{package_path}.{mod_name}")
+        # After all tools are loaded, sync retriever index with full schema
+        try:
+            from tool_retriever import retriever as _retriever
+            _retriever.reindex_all(self.schema)
+        except Exception as e:
+            print(f"[Registry] ToolRetriever reindex skipped: {e}")
 
 # Global registry instance
 registry = Registry()
