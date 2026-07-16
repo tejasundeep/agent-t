@@ -10,6 +10,7 @@ import datetime
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
 from routines import get_db_connection, init_db, calculate_next_run, RoutinesScheduler
+from concurrency import global_executor
 
 # Try to import agent modules from current directory
 try:
@@ -290,7 +291,7 @@ def index():
 @socketio.on('start_agent')
 def handle_start_agent(data):
     prompt = data.get('prompt', '').strip()
-    threading.Thread(target=run_actual_agent, args=(request.sid, prompt)).start()
+    global_executor.submit(run_actual_agent, request.sid, prompt)
 
 @app.route('/api/reset', methods=['POST'])
 def reset_workspace():
@@ -511,7 +512,7 @@ def api_trigger_routine(name):
             scheduler = RoutinesScheduler()
             scheduler._run_job_wrapper(routine_dict, datetime.datetime.now())
             
-        threading.Thread(target=run_triggered).start()
+        global_executor.submit(run_triggered)
         return {"status": "success", "message": f"Triggered routine '{name}' in background."}
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500

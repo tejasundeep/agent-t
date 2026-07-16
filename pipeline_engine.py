@@ -7,8 +7,9 @@ import subprocess
 import threading
 import traceback
 import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from routines import get_db_connection
+from concurrency import global_executor
 
 # Global registry for active pipeline runs to allow cancellation
 # run_id -> dict with: 'stop_event', 'active_subprocesses' (list of subprocess.Popen)
@@ -199,7 +200,7 @@ class PipelineEngine:
             }
             
             # Setup executor for parallel step execution
-            executor = ThreadPoolExecutor(max_workers=4)
+            executor = global_executor
             running_futures = {} # future -> step_id
             
             completed_steps = set()
@@ -255,8 +256,7 @@ class PipelineEngine:
                 for fut in done_futures:
                     del running_futures[fut]
             
-            # Clean shutdown of executor
-            executor.shutdown(wait=False)
+            # Clean shutdown of executor is managed globally
             
             # Check final status
             final_status = 'completed'

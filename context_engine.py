@@ -4,7 +4,10 @@ import json
 import uuid
 import datetime
 import math
+import threading
 from llm import chat, stream
+from routines import get_db_connection
+from concurrency import global_executor
 
 MEMORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "context_memory.json")
 
@@ -40,6 +43,7 @@ class ContextEngine:
     def __init__(self):
         if self._initialized:
             return
+        self.lock = threading.RLock()
         self.nodes = []
         self.active_node_id = None
         self.last_interaction_time = datetime.datetime.now()
@@ -50,43 +54,106 @@ class ContextEngine:
         self._initialized = True
 
     def load_memory(self):
-        """Loads context memory from the JSON file."""
-        if os.path.exists(MEMORY_FILE):
+        """Loads context memory from the SQLite database, migrating from JSON if necessary."""
+        # Create memory_nodes table if it doesn't exist
+        try:
+            with get_db_connection() as conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS memory_nodes (
+                        id TEXT PRIMARY KEY,
+                        topic TEXT NOT NULL,
+                        keywords TEXT NOT NULL,
+                        summary TEXT NOT NULL,
+                        parent_id TEXT,
+                        last_updated TIMESTAMP NOT NULL
+                    );
+                """)
+                conn.commit()
+        except Exception as e:
+            print(f"[Context Engine Error] Failed to create memory_nodes table: {e}")
+
+        db_nodes = []
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.execute("SELECT id, topic, keywords, summary, parent_id, last_updated FROM memory_nodes")
+                rows = cursor.fetchall()
+                for row in rows:
+                    db_nodes.append({
+                        "id": row["id"],
+                        "topic": row["topic"],
+                        "keywords": json.loads(row["keywords"]),
+                        "summary": json.loads(row["summary"]),
+                        "parent_id": row["parent_id"],
+                        "last_updated": row["last_updated"]
+                    })
+        except Exception as e:
+            print(f"[Context Engine Error] Failed to load context memory from DB: {e}")
+
+        # If DB is empty, migrate from JSON file if present
+        if not db_nodes and os.path.exists(MEMORY_FILE):
             try:
                 with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                     raw = f.read().strip()
-                if not raw:
-                    # File exists but is empty (e.g. interrupted write during hot-reload)
-                    self.nodes = []
-                    return
-                data = json.loads(raw)
-                self.nodes = data.get("nodes", [])
+                if raw:
+                    data = json.loads(raw)
+                    self.nodes = data.get("nodes", [])
+                    if self.nodes:
+                        print(f"[Context Engine] Migrating {len(self.nodes)} nodes from JSON to DB.")
+                        self.save_memory()
+                        os.rename(MEMORY_FILE, MEMORY_FILE + ".migrated")
             except Exception as e:
-                print(f"[Context Engine Error] Failed to load context memory: {e}")
-                self.nodes = []
+                print(f"[Context Engine Error] Failed to migrate context memory JSON: {e}")
         else:
-            self.nodes = []
+            self.nodes = db_nodes
 
     def save_memory(self):
-        """Saves context memory to the JSON file."""
+        """Saves current state of self.nodes to the SQLite database."""
         try:
-            with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-                json.dump({"nodes": self.nodes}, f, indent=2)
+            with get_db_connection() as conn:
+                for node in self.nodes:
+                    conn.execute("""
+                        INSERT INTO memory_nodes (id, topic, keywords, summary, parent_id, last_updated)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            topic=excluded.topic,
+                            keywords=excluded.keywords,
+                            summary=excluded.summary,
+                            parent_id=excluded.parent_id,
+                            last_updated=excluded.last_updated
+                    """, (
+                        node["id"],
+                        node["topic"],
+                        json.dumps(node["keywords"]),
+                        json.dumps(node["summary"]),
+                        node.get("parent_id"),
+                        node["last_updated"]
+                    ))
+                
+                # Delete removed nodes
+                if self.nodes:
+                    placeholders = ",".join("?" for _ in self.nodes)
+                    ids = [n["id"] for n in self.nodes]
+                    conn.execute(f"DELETE FROM memory_nodes WHERE id NOT IN ({placeholders})", ids)
+                else:
+                    conn.execute("DELETE FROM memory_nodes")
+                conn.commit()
         except Exception as e:
-            print(f"[Context Engine Error] Failed to save context memory: {e}")
+            print(f"[Context Engine Error] Failed to save context memory to DB: {e}")
 
     def clear_memory(self):
-        """Deletes the memory file and resets state."""
-        self.nodes = []
-        self.active_node_id = None
-        self.write_buffer = []
-        self.buffered_node_id = None
-        self.turn_count = 0
-        if os.path.exists(MEMORY_FILE):
+        """Deletes the memory rows and resets in-memory state."""
+        with self.lock:
+            self.nodes = []
+            self.active_node_id = None
+            self.write_buffer = []
+            self.buffered_node_id = None
+            self.turn_count = 0
             try:
-                os.remove(MEMORY_FILE)
-            except Exception:
-                pass
+                with get_db_connection() as conn:
+                    conn.execute("DELETE FROM memory_nodes")
+                    conn.commit()
+            except Exception as e:
+                print(f"[Context Engine Error] Failed to clear context memory: {e}")
 
     # --- TF-IDF Router ---
 
@@ -112,62 +179,71 @@ class ContextEngine:
 
     def route_query(self, query, last_response=""):
         """Resolves target nodes using Enriched Search Keys (Query + Last Response)."""
-        if not self.nodes:
-            return []
+        with self.lock:
+            if not self.nodes:
+                return []
 
-        enriched_query = f"{query} | {last_response}"
-        query_tokens = tokenize(enriched_query)
-        if not query_tokens:
-            return [self.active_node_id] if self.active_node_id else []
+            enriched_query = f"{query} | {last_response}"
+            query_tokens = tokenize(enriched_query)
+            if not query_tokens:
+                return [self.active_node_id] if self.active_node_id else []
 
-        matched_nodes = []
-        for node in self.nodes:
-            score = self.calculate_bm25_score(query_tokens, node)
-            if score > 0.3:
-                matched_nodes.append((score, node["id"]))
-        
-        matched_nodes.sort(key=lambda x: x[0], reverse=True)
-        return [nid for _, nid in matched_nodes]
+            matched_nodes = []
+            for node in self.nodes:
+                score = self.calculate_bm25_score(query_tokens, node)
+                if score > 0.3:
+                    matched_nodes.append((score, node["id"]))
+            
+            matched_nodes.sort(key=lambda x: x[0], reverse=True)
+            return [nid for _, nid in matched_nodes]
 
     # --- Transactional Write-Buffering ---
 
     def buffer_interaction(self, user_msg, agent_resp):
         """Buffers interaction in-memory and flushes if thresholds are met."""
-        self.turn_count += 1
-        now = datetime.datetime.now()
-        
-        idle_elapsed = (now - self.last_interaction_time).total_seconds()
-        self.last_interaction_time = now
+        with self.lock:
+            self.turn_count += 1
+            now = datetime.datetime.now()
+            
+            idle_elapsed = (now - self.last_interaction_time).total_seconds()
+            self.last_interaction_time = now
 
-        if self.active_node_id != self.buffered_node_id:
-            self.flush_buffer()
-            self.buffered_node_id = self.active_node_id
+            if self.active_node_id != self.buffered_node_id:
+                global_executor.submit(self.flush_buffer)
+                self.buffered_node_id = self.active_node_id
 
-        self.write_buffer.append(f"User: {user_msg}\nAgent: {agent_resp}")
+            self.write_buffer.append(f"User: {user_msg}\nAgent: {agent_resp}")
 
-        if len(self.write_buffer) >= 5 or idle_elapsed > 15.0:
-            self.flush_buffer()
+            if len(self.write_buffer) >= 5 or idle_elapsed > 15.0:
+                global_executor.submit(self.flush_buffer)
 
-        if self.turn_count % 10 == 0:
-            self.run_garbage_collector()
+            if self.turn_count % 10 == 0:
+                global_executor.submit(self.run_garbage_collector)
 
     def flush_buffer(self):
         """Flushes the buffered turns into a structured summary for the target node."""
-        if not self.write_buffer:
+        with self.lock:
+            if not self.write_buffer:
+                return
+            turns_text = "\n\n".join(self.write_buffer)
+            self.write_buffer = []
+            active_node_id = self.active_node_id
+
+        if not active_node_id:
+            new_node_id = self.create_new_node(turns_text)
+            with self.lock:
+                self.active_node_id = new_node_id
+                self.buffered_node_id = new_node_id
             return
 
-        turns_text = "\n\n".join(self.write_buffer)
-        self.write_buffer = []
-
-        if not self.active_node_id:
-            self.active_node_id = self.create_new_node(turns_text)
-            self.buffered_node_id = self.active_node_id
-            return
-
-        node = next((n for n in self.nodes if n["id"] == self.active_node_id), None)
+        with self.lock:
+            node = next((n for n in self.nodes if n["id"] == active_node_id), None)
+        
         if not node:
-            self.active_node_id = self.create_new_node(turns_text)
-            self.buffered_node_id = self.active_node_id
+            new_node_id = self.create_new_node(turns_text)
+            with self.lock:
+                self.active_node_id = new_node_id
+                self.buffered_node_id = new_node_id
             return
 
         try:
@@ -192,9 +268,12 @@ Response MUST be valid JSON matching this schema:
             
             parsed_summary = self._parse_json_defensive(text)
             if parsed_summary:
-                node["summary"] = parsed_summary
-                node["last_updated"] = datetime.datetime.now().isoformat()
-                self.save_memory()
+                with self.lock:
+                    node = next((n for n in self.nodes if n["id"] == active_node_id), None)
+                    if node:
+                        node["summary"] = parsed_summary
+                        node["last_updated"] = datetime.datetime.now().isoformat()
+                        self.save_memory()
         except Exception as e:
             print(f"[Context Engine Error] Fail to compress/update node: {e}")
 
@@ -235,8 +314,9 @@ Response MUST be valid JSON matching this schema:
                     "parent_id": None,
                     "last_updated": datetime.datetime.now().isoformat()
                 }
-                self.nodes.append(new_node)
-                self.save_memory()
+                with self.lock:
+                    self.nodes.append(new_node)
+                    self.save_memory()
                 return node_id
         except Exception as e:
             print(f"[Context Engine Error] Failed to create new node: {e}")
@@ -249,15 +329,17 @@ Response MUST be valid JSON matching this schema:
             "parent_id": None,
             "last_updated": datetime.datetime.now().isoformat()
         }
-        self.nodes.append(fallback_node)
-        self.save_memory()
+        with self.lock:
+            self.nodes.append(fallback_node)
+            self.save_memory()
         return node_id
 
     # --- Hierarchical Node Retrieval & Context Assembly ---
 
     def meta_compress_nodes(self, node_ids):
         """Deterministically merges and compresses multiple nodes into a single structured summary."""
-        matched_nodes = [n for n in self.nodes if n["id"] in node_ids]
+        with self.lock:
+            matched_nodes = [n for n in self.nodes if n["id"] in node_ids]
         if not matched_nodes:
             return ""
 
@@ -306,87 +388,89 @@ Response MUST be valid JSON matching this schema:
         """Constructs the optimized message list, injecting matched and temporal summaries."""
         self.flush_buffer()
 
-        system_msg = next((m for m in raw_messages if m["role"] == "system"), None)
-        non_system_msgs = [m for m in raw_messages if m["role"] != "system"]
-        
-        # Find the index of the last user message to isolate the current turn
-        last_user_idx = -1
-        for i in range(len(non_system_msgs) - 1, -1, -1):
-            if non_system_msgs[i]["role"] == "user":
-                last_user_idx = i
-                break
-                
-        if last_user_idx != -1:
-            current_turn = non_system_msgs[last_user_idx:]
-            history = non_system_msgs[:last_user_idx]
-            # Keep up to 4 historical messages (2 previous turns)
-            history_buffer = history[-4:] if len(history) > 4 else history
-            working_buffer = history_buffer + current_turn
-        else:
-            working_buffer = non_system_msgs[-5:] if len(non_system_msgs) > 5 else non_system_msgs
+        with self.lock:
+            system_msg = next((m for m in raw_messages if m["role"] == "system"), None)
+            non_system_msgs = [m for m in raw_messages if m["role"] != "system"]
+            
+            # Find the index of the last user message to isolate the current turn
+            last_user_idx = -1
+            for i in range(len(non_system_msgs) - 1, -1, -1):
+                if non_system_msgs[i]["role"] == "user":
+                    last_user_idx = i
+                    break
+                    
+            if last_user_idx != -1:
+                current_turn = non_system_msgs[last_user_idx:]
+                history = non_system_msgs[:last_user_idx]
+                # Keep up to 4 historical messages (2 previous turns)
+                history_buffer = history[-4:] if len(history) > 4 else history
+                working_buffer = history_buffer + current_turn
+            else:
+                working_buffer = non_system_msgs[-5:] if len(non_system_msgs) > 5 else non_system_msgs
 
-        
-        last_user = next((m.get("content") or "" for m in reversed(raw_messages) if m["role"] == "user"), "")
-        last_agent = next((m.get("content") or "" for m in reversed(raw_messages) if m["role"] == "assistant"), "")
-        
-        matched_ids = self.route_query(last_user, last_agent)
-        if matched_ids:
-            self.active_node_id = matched_ids[0]
+            
+            last_user = next((m.get("content") or "" for m in reversed(raw_messages) if m["role"] == "user"), "")
+            last_agent = next((m.get("content") or "" for m in reversed(raw_messages) if m["role"] == "assistant"), "")
+            
+            matched_ids = self.route_query(last_user, last_agent)
+            if matched_ids:
+                self.active_node_id = matched_ids[0]
 
-        loaded_ids = set()
-        active_ids_to_load = []
+            loaded_ids = set()
+            active_ids_to_load = []
 
-        def gather_ids(nid):
-            if not nid or nid in loaded_ids:
-                return
-            loaded_ids.add(nid)
-            active_ids_to_load.append(nid)
-            node = next((n for n in self.nodes if n["id"] == nid), None)
-            if node and node.get("parent_id"):
-                gather_ids(node["parent_id"])
+            def gather_ids(nid):
+                if not nid or nid in loaded_ids:
+                    return
+                loaded_ids.add(nid)
+                active_ids_to_load.append(nid)
+                node = next((n for n in self.nodes if n["id"] == nid), None)
+                if node and node.get("parent_id"):
+                    gather_ids(node["parent_id"])
 
-        for nid in matched_ids:
-            gather_ids(nid)
+            for nid in matched_ids:
+                gather_ids(nid)
 
-        if self.nodes:
-            recent_node = max(self.nodes, key=lambda n: n["last_updated"])
-            if recent_node["id"] not in loaded_ids:
-                gather_ids(recent_node["id"])
+            if self.nodes:
+                recent_node = max(self.nodes, key=lambda n: n["last_updated"])
+                if recent_node["id"] not in loaded_ids:
+                    gather_ids(recent_node["id"])
 
-        injected_text = ""
-        if active_ids_to_load:
-            meta_summary = self.meta_compress_nodes(active_ids_to_load)
-            injected_text = "\n=== CURRENT CONTEXT MEMORY ===\n" + meta_summary + "=============================\n"
+            injected_text = ""
+            if active_ids_to_load:
+                meta_summary = self.meta_compress_nodes(active_ids_to_load)
+                injected_text = "\n=== CURRENT CONTEXT MEMORY ===\n" + meta_summary + "=============================\n"
 
-        assembled_messages = []
-        if system_msg:
-            new_sys = {"role": "system", "content": system_msg["content"] + injected_text}
-            assembled_messages.append(new_sys)
-        
-        assembled_messages.extend(working_buffer)
-        return assembled_messages
+            assembled_messages = []
+            if system_msg:
+                new_sys = {"role": "system", "content": system_msg["content"] + injected_text}
+                assembled_messages.append(new_sys)
+            
+            assembled_messages.extend(working_buffer)
+            return assembled_messages
 
     # --- Asynchronous Garbage Collector (De-duplication) ---
 
     def run_garbage_collector(self):
         """Asynchronously cleans up memory by Jaccard pre-screening and merging nodes."""
-        if len(self.nodes) < 2:
-            return
+        with self.lock:
+            if len(self.nodes) < 2:
+                return
 
-        merge_candidates = []
-        for i in range(len(self.nodes)):
-            for j in range(i + 1, len(self.nodes)):
-                n1 = self.nodes[i]
-                n2 = self.nodes[j]
-                
-                set1 = set(n1["keywords"])
-                set2 = set(n2["keywords"])
-                if not set1 or not set2:
-                    continue
-                
-                jaccard = len(set1.intersection(set2)) / len(set1.union(set2))
-                if jaccard > 0.4:
-                    merge_candidates.append((n1, n2))
+            merge_candidates = []
+            for i in range(len(self.nodes)):
+                for j in range(i + 1, len(self.nodes)):
+                    n1 = self.nodes[i]
+                    n2 = self.nodes[j]
+                    
+                    set1 = set(n1["keywords"])
+                    set2 = set(n2["keywords"])
+                    if not set1 or not set2:
+                        continue
+                    
+                    jaccard = len(set1.intersection(set2)) / len(set1.union(set2))
+                    if jaccard > 0.4:
+                        merge_candidates.append((n1, n2))
         
         for n1, n2 in merge_candidates:
             try:
@@ -418,20 +502,23 @@ If they are distinct and should not be merged, respond with:
                 parsed = self._parse_json_defensive(text)
                 
                 if parsed and parsed.get("should_merge"):
-                    n1["topic"] = parsed["merged_topic"]
-                    n1["keywords"] = [k.lower() for k in parsed["merged_keywords"]]
-                    n1["summary"] = parsed["merged_summary"]
-                    n1["last_updated"] = datetime.datetime.now().isoformat()
-                    
-                    for n in self.nodes:
-                        if n.get("parent_id") == n2["id"]:
-                            n["parent_id"] = n1["id"]
-                    
-                    self.nodes.remove(n2)
-                    if self.active_node_id == n2["id"]:
-                        self.active_node_id = n1["id"]
-                    self.save_memory()
-                    print(f"[Garbage Collector] Merged duplicate topic node '{n2['topic']}' into '{n1['topic']}'.")
+                    with self.lock:
+                        # Re-verify that n1 and n2 still exist in self.nodes
+                        if n1 in self.nodes and n2 in self.nodes:
+                            n1["topic"] = parsed["merged_topic"]
+                            n1["keywords"] = [k.lower() for k in parsed["merged_keywords"]]
+                            n1["summary"] = parsed["merged_summary"]
+                            n1["last_updated"] = datetime.datetime.now().isoformat()
+                            
+                            for n in self.nodes:
+                                if n.get("parent_id") == n2["id"]:
+                                    n["parent_id"] = n1["id"]
+                            
+                            self.nodes.remove(n2)
+                            if self.active_node_id == n2["id"]:
+                                self.active_node_id = n1["id"]
+                            self.save_memory()
+                            print(f"[Garbage Collector] Merged duplicate topic node '{n2['topic']}' into '{n1['topic']}'.")
             except Exception as e:
                 print(f"[Context Engine GC Error] Error evaluating merge: {e}")
 

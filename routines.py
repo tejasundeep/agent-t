@@ -7,6 +7,7 @@ import subprocess
 import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from concurrency import global_executor
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "routines.db")
 
@@ -80,6 +81,16 @@ def init_db():
                 output TEXT,
                 error TEXT,
                 FOREIGN KEY (run_id) REFERENCES pipeline_runs(id) ON DELETE CASCADE
+            );
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS memory_nodes (
+                id TEXT PRIMARY KEY,
+                topic TEXT NOT NULL,
+                keywords TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                parent_id TEXT,
+                last_updated TIMESTAMP NOT NULL
             );
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_routines_status_next_run ON routines(status, next_run);")
@@ -180,7 +191,7 @@ def calculate_next_run(schedule_str, last_run_or_now):
 class RoutinesScheduler:
     def __init__(self, max_workers=4, notification_callback=None):
         self.stop_event = threading.Event()
-        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        self.executor = global_executor
         self.running_tasks = {} # routine_name -> future
         # Optional callback: fn(title, message, level) — injected by app.py to emit SocketIO notifications
         self.notification_callback = notification_callback
@@ -191,7 +202,6 @@ class RoutinesScheduler:
 
     def stop(self):
         self.stop_event.set()
-        self.executor.shutdown(wait=True)
         if hasattr(self, "thread"):
             self.thread.join()
 
